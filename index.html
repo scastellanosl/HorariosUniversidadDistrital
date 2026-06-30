@@ -1,0 +1,2093 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Horarios</title>
+    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/en/thumb/4/40/Aphex_Twin_logo.svg/960px-Aphex_Twin_logo.svg.png?_=20250713090340">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ══════════════════════════════════
+           OVERLAY OBSERVACIONES
+        ══════════════════════════════════ */
+        .obs-overlay {
+            display: none; position: fixed; inset: 0; z-index: 999;
+            background: rgba(0,0,0,0.3);
+        }
+        .obs-overlay.open { display: block; }
+
+        /* ══════════════════════════════════
+           PANEL LATERAL OBSERVACIONES
+        ══════════════════════════════════ */
+        .obs-panel {
+            position: fixed; top: 0; right: -100vw; width: min(420px, 92vw);
+            height: 100vh; z-index: 1000; display: flex; flex-direction: column;
+            transition: right 0.35s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+        }
+        .obs-panel.open { right: 0; }
+        .obs-panel::before {
+            content: ''; position: absolute; inset: 0;
+            background: rgba(10,6,7,0.92);
+            backdrop-filter: blur(100px); -webkit-backdrop-filter: blur(100px);
+            z-index: 0; border-left: 1px solid rgba(255,255,255,0.1);
+        }
+        .obs-panel > * { position: relative; z-index: 1; }
+        .obs-content {
+            flex: 1; overflow-y: auto; padding: 32px 24px 24px;
+            scrollbar-width: none; -ms-overflow-style: none;
+        }
+        .obs-content::-webkit-scrollbar { display: none; }
+        .obs-main-title { font-family:'Inter',sans-serif; font-size:28px; font-weight:700; color:#fff; margin:0 0 6px; line-height:1.1; }
+        .obs-subtitle { font-family:'Inter',sans-serif; font-size:15px; color:rgba(255,255,255,0.65); margin:0 0 24px; line-height:1.4; }
+        .obs-section-title { font-family:'Inter',sans-serif; font-size:18px; font-weight:700; color:#fff; margin:0 0 14px; }
+        .obs-textarea { width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:14px 16px; color:#fff; font-family:'Inter',sans-serif; font-size:15px; resize:none; min-height:90px; outline:none; box-sizing:border-box; transition:border-color 0.2s; }
+        .obs-textarea::placeholder { color:rgba(255,255,255,0.3); font-style:italic; }
+        .obs-textarea:focus { border-color:rgba(255,255,255,0.28); }
+        .obs-add-btn { width:100%; margin-top:10px; padding:13px; background:#1a3a5c; border:1px solid rgba(100,160,230,0.3); border-radius:12px; color:#fff; font-family:'Inter',sans-serif; font-size:16px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+        .obs-add-btn:hover { background:#1e4570; }
+        .obs-list { margin-top:16px; display:flex; flex-direction:column; gap:10px; }
+        .obs-item { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:14px 16px; }
+        .obs-item-text { font-family:'Inter',sans-serif; font-size:15px; color:#fff; line-height:1.4; margin-bottom:10px; cursor:text; }
+        .obs-item-edit { width:100%; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px 12px; color:#fff; font-family:'Inter',sans-serif; font-size:15px; resize:none; min-height:60px; outline:none; box-sizing:border-box; margin-bottom:10px; line-height:1.4; }
+        .obs-item-footer { display:flex; align-items:center; justify-content:space-between; }
+        .obs-item-meta { font-family:'Inter',sans-serif; font-size:13px; color:rgba(255,255,255,0.4); }
+        .obs-item-actions { display:flex; gap:10px; }
+        .obs-icon-btn { background:transparent; border:none; cursor:pointer; padding:2px; display:flex; align-items:center; justify-content:center; opacity:0.6; transition:opacity 0.2s; }
+        .obs-icon-btn:hover { opacity:1; }
+        .obs-divider { height:1px; background:rgba(255,255,255,0.08); margin:24px 0; }
+        .obs-empty-text { font-family:'Inter',sans-serif; font-size:14px; color:rgba(255,255,255,0.4); font-style:italic; line-height:1.5; margin:0; text-align:center; }
+
+        /* Observaciones por Celda */
+        .obs-per-cell-list { display:flex; flex-direction:column; gap:10px; margin-bottom: 10px; }
+        .obs-cell-block { background:rgba(144,174,234,0.07); border:1px solid rgba(144,174,234,0.2); border-radius:12px; padding:12px 14px; }
+        .obs-cell-title { font-family:'Inter',sans-serif; font-size:13px; font-weight:700; color:#90AEEA; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.2px; }
+        .obs-cell-notes { display:flex; flex-direction:column; gap:6px; }
+        .obs-cell-note { font-family:'Inter',sans-serif; font-size:14px; color:#fff; line-height:1.4; padding-left:10px; border-left:2px solid rgba(144,174,234,0.4); }
+
+        /* ══════════════════════════════════
+           DROPDOWN DE SELECCIÓN DE DÍA
+        ══════════════════════════════════ */
+        .day-dropdown {
+            display: none; position: fixed; min-width: 180px;
+            background: rgba(10,7,8,0.55); backdrop-filter: blur(40px) saturate(150%);
+            -webkit-backdrop-filter: blur(40px) saturate(150%);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 16px;
+            padding: 6px; z-index: 9999; box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+        }
+        .day-dropdown.open { display: block; }
+        .day-dropdown-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:10px; font-family:'Inter',sans-serif; font-size:15px; font-weight:500; color:rgba(255,255,255,0.85); cursor:pointer; transition:background 0.15s; white-space:nowrap; }
+        .day-dropdown-item:hover { background:rgba(255,255,255,0.08); }
+        .day-dropdown-item.dia-seleccionado { background:rgba(144,174,234,0.12); color:#fff; font-weight:600; }
+        .day-hoy-tag { display:none; font-size:10.5px; font-weight:700; color:#90AEEA; background:rgba(144,174,234,0.18); padding:2px 8px; border-radius:20px; letter-spacing:0.3px; text-transform:uppercase; }
+        .day-dropdown-item.dia-hoy .day-hoy-tag { display:inline-block; }
+        .day-dropdown-item.dia-hoy { color:#90AEEA; }
+
+        /* ══════════════════════════════════
+           PANEL DE CUENTA / LOGIN
+        ══════════════════════════════════ */
+        .account-dropdown { display:none; position:fixed; min-width:260px; background:rgba(10,7,8,0.55); backdrop-filter:blur(40px) saturate(150%); -webkit-backdrop-filter:blur(40px) saturate(150%); border:1px solid rgba(255,255,255,0.15); border-radius:16px; padding:14px; z-index:9999; box-shadow:0 20px 50px rgba(0,0,0,0.65); font-family:'Inter',sans-serif; }
+        .account-dropdown.open { display:block; }
+        .account-google-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:10px; padding:11px 16px; background:rgba(255,255,255,0.95); border:none; border-radius:10px; color:#1f1f1f; font-family:'Inter',sans-serif; font-size:14px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+        .account-google-btn:hover { background:#fff; }
+        .account-user-info { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+        .account-user-photo { width:42px; height:42px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+        .account-user-name { font-size:14px; font-weight:600; color:#fff; }
+        .account-user-email { font-size:12px; color:rgba(255,255,255,0.5); }
+        .account-role-tag { display:inline-block; font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; margin-bottom:12px; letter-spacing:0.3px; text-transform:uppercase; background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.6); }
+        .account-role-tag.es-admin { background:rgba(144,174,234,0.18); color:#90AEEA; }
+        .account-logout-btn { width:100%; padding:10px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.13); border-radius:10px; color:#fff; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+        .account-logout-btn:hover { background:rgba(255,255,255,0.14); }
+        .account-divider { height:1px; background:rgba(255,255,255,0.1); margin:12px 0; }
+        .account-action-btn { width:100%; display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:rgba(255,255,255,0.85); font-family:'Inter',sans-serif; font-size:13.5px; font-weight:500; cursor:pointer; transition:background 0.2s; margin-bottom:8px; }
+        .account-action-btn:hover { background:rgba(255,255,255,0.1); }
+        .account-action-btn:last-of-type { margin-bottom:0; }
+
+        /* ══════════════════════════════════
+           PANEL DE GESTIÓN DE ADMINISTRADORES
+        ══════════════════════════════════ */
+        .admins-panel-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 7000;
+            background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;
+        }
+        .admins-panel-backdrop.open { display: flex; }
+        .admins-panel-dialog {
+            width: 100%; max-width: 460px; max-height: 80vh; overflow-y: auto;
+            background: rgba(20,17,18,0.94); border: 1px solid rgba(255,255,255,0.13);
+            border-radius: 20px; padding: 24px; color: #fff; font-family: 'Inter', sans-serif;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.6); scrollbar-width: none;
+        }
+        .admins-panel-dialog::-webkit-scrollbar { display: none; }
+        .ap-title { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
+        .ap-desc { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.5; margin: 0 0 16px; }
+        .ap-search {
+            display: flex; align-items: center; gap: 8px; padding: 9px 13px; margin-bottom: 14px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 11px;
+        }
+        .ap-search input {
+            flex: 1; background: none; border: none; outline: none; color: #fff;
+            font-family: 'Inter', sans-serif; font-size: 13.5px;
+        }
+        .ap-search input::placeholder { color: rgba(255,255,255,0.3); }
+        .ap-search svg { color: rgba(255,255,255,0.4); flex-shrink: 0; }
+        .ap-loading, .ap-empty {
+            text-align: center; padding: 24px 0; font-size: 13px; color: rgba(255,255,255,0.35); font-style: italic;
+        }
+        .ap-usuario {
+            display: flex; align-items: center; gap: 11px; padding: 10px;
+            border-radius: 11px; margin-bottom: 6px; transition: background 0.15s;
+        }
+        .ap-usuario:hover { background: rgba(255,255,255,0.04); }
+        .ap-usuario-foto { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+        .ap-usuario-info { flex: 1; min-width: 0; }
+        .ap-usuario-nombre { font-size: 13.5px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ap-usuario-email { font-size: 11.5px; color: rgba(255,255,255,0.4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ap-toggle-btn {
+            padding: 6px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 12px;
+            font-weight: 600; cursor: pointer; border: 1px solid; transition: background 0.2s; flex-shrink: 0; white-space: nowrap;
+        }
+        .ap-toggle-btn.es-admin { background: rgba(144,174,234,0.15); color: #90AEEA; border-color: rgba(144,174,234,0.35); }
+        .ap-toggle-btn.es-admin:hover { background: rgba(220,80,80,0.15); color: #e05252; border-color: rgba(220,80,80,0.3); }
+        .ap-toggle-btn.no-admin { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.65); border-color: rgba(255,255,255,0.13); }
+        .ap-toggle-btn.no-admin:hover { background: rgba(111,207,151,0.15); color: #6fcf97; border-color: rgba(111,207,151,0.3); }
+        .ap-toggle-btn:disabled { opacity: 0.5; cursor: wait; }
+        .ap-btn-cerrar {
+            width: 100%; margin-top: 14px; padding: 11px; border-radius: 11px;
+            background: rgba(255,255,255,0.1); border: none; color: #fff;
+            font-family: 'Inter', sans-serif; font-size: 13.5px; font-weight: 600;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .ap-btn-cerrar:hover { background: rgba(255,255,255,0.16); }
+
+        /* ══════════════════════════════════
+           DIÁLOGO DE IMPORTACIÓN DE EXCEL
+        ══════════════════════════════════ */
+        .import-backdrop { display:none; position:fixed; inset:0; z-index:6000; background:rgba(0,0,0,0.55); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); align-items:center; justify-content:center; padding:20px; box-sizing:border-box; }
+        .import-backdrop.open { display:flex; }
+        .import-dialog { width:100%; max-width:480px; max-height:80vh; overflow-y:auto; background:rgba(20,17,18,0.92); border:1px solid rgba(255,255,255,0.13); border-radius:20px; padding:26px; color:#fff; font-family:'Inter',sans-serif; box-shadow:0 24px 60px rgba(0,0,0,0.6); scrollbar-width:none; }
+        .import-dialog::-webkit-scrollbar { display:none; }
+        .import-title { font-size:21px; font-weight:700; margin:0 0 8px; }
+        .import-desc { font-size:13.5px; color:rgba(255,255,255,0.6); line-height:1.5; margin:0 0 18px; }
+        .import-desc strong { color:#e0a83d; }
+        .import-summary { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:14px 16px; font-size:14px; line-height:1.7; margin-bottom:12px; }
+        .import-summary .ok-count { color:#6fcf97; font-weight:700; }
+        .import-summary .err-count { color:#e05252; font-weight:700; }
+        .import-errors { max-height:160px; overflow-y:auto; font-size:12.5px; color:rgba(255,255,255,0.55); background:rgba(224,82,82,0.07); border:1px solid rgba(224,82,82,0.2); border-radius:10px; padding:10px 12px; margin-bottom:16px; display:none; }
+        .import-errors.show { display:block; }
+        .import-errors div { padding:3px 0; }
+        .import-actions { display:flex; gap:10px; }
+        .import-btn { flex:1; padding:12px; border-radius:12px; font-family:'Inter',sans-serif; font-size:14.5px; font-weight:600; cursor:pointer; border:none; transition:background 0.2s, opacity 0.2s; }
+        .import-btn-cancel { background:rgba(255,255,255,0.1); color:#fff; }
+        .import-btn-cancel:hover { background:rgba(255,255,255,0.16); }
+        .import-btn-confirm { background:#1a3a5c; color:#fff; border:1px solid rgba(100,160,230,0.3); }
+        .import-btn-confirm:hover { background:#1e4570; }
+        .import-btn-confirm:disabled { opacity:0.4; cursor:not-allowed; }
+
+        /* ══════════════════════════════════
+           PANTALLA DE LOGIN
+        ══════════════════════════════════ */
+        .login-screen { display:none; position:fixed; inset:0; z-index:5000; align-items:center; justify-content:center; background:rgba(0,0,0,0.35); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+        .login-screen.show { display:flex; }
+        .login-card { width:100%; max-width:420px; margin:24px; padding:56px 48px 44px; border-radius:28px; background:rgba(20,17,18,0.55); border:1px solid rgba(255,255,255,0.12); backdrop-filter:blur(30px) saturate(140%); -webkit-backdrop-filter:blur(30px) saturate(140%); box-shadow:0 30px 70px rgba(0,0,0,0.55); display:flex; flex-direction:column; align-items:center; text-align:center; }
+        .login-logo { width:96px; height:auto; margin-bottom:28px; }
+        .login-subtitle { font-family:'Inter',sans-serif; font-size:17px; font-weight:500; color:#fff; margin:0 0 22px; }
+        .login-google-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:12px; padding:14px 20px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.14); border-radius:14px; color:#fff; font-family:'Inter',sans-serif; font-size:15.5px; font-weight:500; cursor:pointer; transition:background 0.2s; }
+        .login-google-btn:hover { background:rgba(255,255,255,0.12); }
+        .login-continue-link { margin-top:18px; background:none; border:none; color:rgba(255,255,255,0.4); font-family:'Inter',sans-serif; font-size:13px; cursor:pointer; text-decoration:underline; text-underline-offset:3px; transition:color 0.2s; }
+        .login-continue-link:hover { color:rgba(255,255,255,0.65); }
+
+        /* ══════════════════════════════════
+           MODO SOLO LECTURA
+        ══════════════════════════════════ */
+        body.modo-solo-lectura .class-card { cursor:default !important; pointer-events:none; }
+        body.modo-solo-lectura .class-card .obs-indicator { pointer-events:none; }
+
+        /* ══════════════════════════════════
+           TARJETAS — FUENTES AJUSTADAS
+           prof-name más grande, class-subject más pequeña
+        ══════════════════════════════════ */
+        .class-card { cursor:grab; overflow:hidden; box-sizing:border-box; }
+        .class-card:active { cursor:grabbing; }
+        .class-card.dragging { opacity:0.4; transform:scale(0.97); }
+        .card-wrapper.drag-over .class-card { outline:2px solid rgba(144,174,234,0.8); background:rgba(144,174,234,0.08); }
+
+        /* Nombre del profesor: más grande y con mayor peso */
+        .class-card .prof-name {
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            line-height: 1.2 !important;
+        }
+        /* Nombre de la clase: más pequeño y más delgado */
+        .class-card .class-subject {
+            font-size: 12px !important;
+            font-weight: 400 !important;
+            line-height: 1.25 !important;
+            color: rgba(255,255,255,0.85) !important;
+        }
+
+        .class-card .prof-name,
+        .class-card .class-subject,
+        .class-card .room-code,
+        .class-card .estado-label { overflow-wrap:break-word; word-break:break-word; hyphens:auto; max-width:100%; }
+        .class-card .room-code { max-width:calc(100% - 16px); }
+
+        .grid-cell.card-wrapper { min-width:0; overflow:hidden; }
+        .schedule-grid { overflow-x:auto; }
+
+        /* ══════════════════════════════════
+           DIALOGO INTERCAMBIAR
+        ══════════════════════════════════ */
+        .swap-backdrop { display:none; position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,0.5); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); align-items:center; justify-content:center; padding:20px; box-sizing:border-box; }
+        .swap-backdrop.open { display:flex; }
+        .swap-dialog { width:100%; max-width:420px; background:rgba(28,24,26,0.92); border:1px solid rgba(255,255,255,0.12); border-radius:20px; padding:28px 24px 24px; color:#fff; font-family:'Inter',sans-serif; box-shadow:0 24px 60px rgba(0,0,0,0.6); }
+        .swap-title { font-size:24px; font-weight:700; margin:0 0 10px; line-height:1.2; }
+        .swap-desc { font-size:14px; color:rgba(255,255,255,0.65); margin:0 0 22px; line-height:1.5; }
+        .swap-option { border:1px solid rgba(255,255,255,0.15); border-radius:14px; padding:14px 16px; margin-bottom:12px; cursor:pointer; display:flex; align-items:flex-start; gap:14px; transition:border-color 0.2s,background 0.2s; background:rgba(255,255,255,0.03); }
+        .swap-option:hover { background:rgba(255,255,255,0.06); }
+        .swap-option.selected { border-color:rgba(144,174,234,0.7); background:rgba(144,174,234,0.07); }
+        .swap-radio { width:20px; height:20px; border-radius:50%; border:2px solid rgba(255,255,255,0.3); flex-shrink:0; margin-top:2px; display:flex; align-items:center; justify-content:center; }
+        .swap-option.selected .swap-radio { border-color:#90AEEA; }
+        .swap-radio-dot { width:10px; height:10px; border-radius:50%; background:#90AEEA; display:none; }
+        .swap-option.selected .swap-radio-dot { display:block; }
+        .swap-option-label { font-size:16px; font-weight:600; color:#fff; margin-bottom:3px; }
+        .swap-option-sub { font-size:13px; color:rgba(255,255,255,0.5); line-height:1.4; }
+        .swap-actions { display:flex; gap:12px; margin-top:22px; flex-wrap:wrap; }
+        .swap-btn { flex:1; min-width:120px; padding:13px; border-radius:12px; font-family:'Inter',sans-serif; font-size:15px; font-weight:600; cursor:pointer; border:none; transition:background 0.2s; }
+        .swap-btn-cancel { background:rgba(255,255,255,0.1); color:#fff; }
+        .swap-btn-cancel:hover { background:rgba(255,255,255,0.16); }
+        .swap-btn-confirm { background:#1a3a5c; color:#fff; border:1px solid rgba(100,160,230,0.3); }
+        .swap-btn-confirm:hover { background:#1e4570; }
+        .swap-fecha-fields { display:none; gap:10px; margin:10px 0 4px 34px; }
+        .swap-fecha-fields.show { display:flex; }
+        .swap-fecha-fields input { flex:1; }
+        .swap-error { font-family:'Inter',sans-serif; font-size:13px; color:#e05252; margin:6px 0 0; min-height:18px; }
+
+        /* ══════════════════════════════════
+           PANEL EDITAR CELDA
+        ══════════════════════════════════ */
+        .edit-backdrop { display:none; position:fixed; inset:0; z-index:2500; background:rgba(0,0,0,0.5); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); align-items:center; justify-content:center; padding:20px; box-sizing:border-box; }
+        .edit-backdrop.open { display:flex; }
+        .edit-dialog { width:100%; max-width:520px; max-height:90vh; overflow-y:auto; background:rgba(20,17,18,0.88); border:1px solid rgba(255,255,255,0.13); border-radius:22px; padding:26px 26px 22px; color:#fff; font-family:'Inter',sans-serif; box-shadow:0 24px 60px rgba(0,0,0,0.6); scrollbar-width:none; -ms-overflow-style:none; }
+        .edit-dialog::-webkit-scrollbar { display:none; }
+        .edit-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+        .edit-title { font-size:24px; font-weight:700; }
+        .edit-novo-toggle { display:flex; align-items:center; gap:10px; }
+        .edit-novo-label { font-size:14px; font-weight:500; color:rgba(255,255,255,0.75); }
+        .nv-switch { position:relative; width:46px; height:26px; flex-shrink:0; }
+        .nv-switch input { opacity:0; width:0; height:0; }
+        .nv-slider { position:absolute; inset:0; border-radius:26px; cursor:pointer; background:rgba(255,255,255,0.15); transition:background 0.25s; }
+        .nv-slider:before { content:''; position:absolute; height:20px; width:20px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:transform 0.25s, background 0.25s; }
+        .nv-switch input:checked + .nv-slider { background:#c0392b; }
+        .nv-switch input:checked + .nv-slider:before { transform:translateX(20px); }
+        .edit-subtitle { font-size:14px; color:rgba(255,255,255,0.55); margin:8px 0 18px; line-height:1.4; }
+        .edit-field-label { font-size:14px; font-weight:700; color:#fff; margin:0 0 8px; }
+        .edit-type-tabs { display:flex; gap:4px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:4px; margin-bottom:18px; }
+        .edit-type-tab { flex:1; text-align:center; padding:9px 6px; border-radius:11px; font-size:13px; font-weight:600; color:rgba(255,255,255,0.55); cursor:pointer; transition:background 0.2s, color 0.2s; white-space:nowrap; }
+        .edit-type-tab.active { background:rgba(255,255,255,0.13); color:#fff; }
+        .edit-input { width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:13px 15px; color:#fff; font-family:'Inter',sans-serif; font-size:15px; outline:none; box-sizing:border-box; transition:border-color 0.2s; }
+        .edit-input::placeholder { color:rgba(255,255,255,0.32); }
+        .edit-input:focus { border-color:rgba(255,255,255,0.3); }
+        .edit-row2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:18px 0; }
+        .edit-section { margin-bottom:18px; }
+        .edit-duration-option { border:1px solid rgba(255,255,255,0.13); border-radius:14px; padding:14px 16px; margin-bottom:10px; cursor:pointer; display:flex; align-items:center; gap:14px; background:rgba(255,255,255,0.045); transition:border-color 0.2s, background 0.2s; }
+        .edit-duration-option:hover { background:rgba(255,255,255,0.07); }
+        .edit-duration-option.selected { border-color:rgba(144,174,234,0.7); background:rgba(144,174,234,0.08); }
+        .edit-radio { width:20px; height:20px; border-radius:50%; border:2px solid rgba(255,255,255,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+        .edit-duration-option.selected .edit-radio { border-color:#90AEEA; }
+        .edit-radio-dot { width:10px; height:10px; border-radius:50%; background:#90AEEA; display:none; }
+        .edit-duration-option.selected .edit-radio-dot { display:block; }
+        .edit-duration-label { font-size:16px; font-weight:600; }
+        .edit-fecha-fields { display:none; gap:10px; margin:0 0 10px 34px; }
+        .edit-fecha-fields.show { display:flex; }
+        .edit-fecha-fields input { flex:1; }
+        .edit-obs-textarea { width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:13px 15px; color:#fff; font-family:'Inter',sans-serif; font-size:14px; resize:none; min-height:70px; outline:none; box-sizing:border-box; }
+        .edit-obs-textarea::placeholder { color:rgba(255,255,255,0.32); }
+        .edit-add-obs-btn { width:100%; margin-top:10px; padding:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); border-radius:12px; color:#fff; font-family:'Inter',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+        .edit-add-obs-btn:hover { background:rgba(255,255,255,0.13); }
+        .edit-obs-list { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+        .edit-obs-item { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px; font-size:13.5px; line-height:1.4; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+        .edit-obs-item button { background:none; border:none; color:#e05252; cursor:pointer; flex-shrink:0; opacity:0.7; }
+        .edit-obs-item button:hover { opacity:1; }
+        .edit-actions { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+        .edit-btn { flex:1; min-width:110px; padding:13px; border-radius:12px; font-family:'Inter',sans-serif; font-size:15px; font-weight:700; cursor:pointer; border:none; transition:background 0.2s, opacity 0.2s; }
+        .edit-btn-delete { background:rgba(120,30,30,0.35); color:#ff8a8a; border:1px solid rgba(220,80,80,0.35); flex:1 1 100%; }
+        .edit-btn-delete:hover { background:rgba(150,35,35,0.45); }
+        .edit-btn-cancel { background:rgba(255,255,255,0.1); color:#fff; }
+        .edit-btn-cancel:hover { background:rgba(255,255,255,0.16); }
+        .edit-btn-save { background:#1a3a5c; color:#fff; border:1px solid rgba(100,160,230,0.3); }
+        .edit-btn-save:hover { background:#1e4570; }
+
+        /* Profesor ausente */
+        .prof-name.ausente { color:#e05252 !important; }
+
+        /* Indicador de observaciones */
+        .class-card .obs-indicator { position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%; background:#90AEEA; box-shadow:0 0 6px rgba(144,174,234,0.8); }
+        .class-card.tipo-mantenimiento .obs-indicator, .class-card.tipo-libre .obs-indicator { top:8px; right:8px; }
+        .class-card.tiene-obs:not(.tipo-mantenimiento)::before { background-color:rgba(224,168,61,0.10) !important; box-shadow:inset 2px 2px 0px -2px rgba(255,220,150,0.5), inset 0 0 3px 1px rgba(224,168,61,0.22) !important; }
+        .class-card.tiene-obs:not(.tipo-mantenimiento):hover::before { background-color:rgba(224,168,61,0.16) !important; }
+
+        /* Estados de celda */
+        .class-card.tipo-mantenimiento, .class-card.tipo-libre { align-items:center; justify-content:center; text-align:center; }
+        .class-card.tipo-mantenimiento::before { background-color:rgba(224,168,61,0.14) !important; box-shadow:inset 2px 2px 0px -2px rgba(255,220,150,0.7), inset 0 0 3px 1px rgba(224,168,61,0.35) !important; }
+        .class-card.tipo-mantenimiento:hover::before { background-color:rgba(224,168,61,0.22) !important; }
+        .class-card.tipo-mantenimiento .estado-label { color:#e0a83d; font-weight:700; font-size:14px; letter-spacing:0.2px; }
+        .class-card.tipo-libre .estado-label { color:rgba(255,255,255,0.55); font-weight:600; font-style:italic; font-size:14px; }
+        .class-card.tipo-vacio { background:transparent !important; cursor:pointer; }
+        .class-card.tipo-vacio::before, .class-card.tipo-vacio::after { display:none !important; }
+        .class-card.tipo-vacio:hover { background:rgba(255,255,255,0.03) !important; border-radius:12px; }
+
+        /* top-bar layout */
+        .top-bar-row1 { display:contents; }
+        .icon-actions-group { margin-left:auto; }
+
+        /* ══════════════════════════════════
+           SISTEMA DE BÚSQUEDA
+        ══════════════════════════════════ */
+
+        /* Tarjetas resaltadas en la grilla cuando coinciden con la búsqueda */
+        .class-card.search-match {
+            outline: 2px solid rgba(144,174,234,0.8);
+            background: rgba(144,174,234,0.07) !important;
+        }
+        .class-card.search-match::before {
+            background-color: rgba(144,174,234,0.1) !important;
+        }
+        /* Tarjetas que NO coinciden: se atenúan */
+        body.buscando .class-card:not(.search-match):not(.tipo-vacio) {
+            opacity: 0.25;
+            transition: opacity 0.2s;
+        }
+        body.buscando .class-card.tipo-vacio {
+            opacity: 0.1;
+        }
+        /* Filas de sala sin ninguna coincidencia: se ocultan completamente */
+        body.buscando .grid-row-sin-match {
+            display: none !important;
+        }
+
+        /* Panel de resultados de otros días */
+        .search-results-panel {
+            display: none;
+            margin-top: 24px;
+        }
+        .search-results-panel.visible { display: block; }
+
+        .search-otros-dias {
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.02);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            margin-bottom: 16px;
+        }
+
+        .search-otros-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 20px;
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .search-dia-grupo {
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .search-dia-grupo:last-child { border-bottom: none; }
+
+        .search-dia-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px 10px;
+            font-family: 'Inter', sans-serif;
+        }
+        .search-dia-nombre {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .search-dia-count {
+            font-size: 12.5px;
+            color: rgba(255,255,255,0.4);
+        }
+        .search-dia-ver {
+            font-size: 12.5px;
+            color: #90AEEA;
+            cursor: pointer;
+            background: none;
+            border: none;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            padding: 0;
+            transition: opacity 0.2s;
+        }
+        .search-dia-ver:hover { opacity: 0.75; }
+
+        .search-resultado-fila {
+            display: grid;
+            grid-template-columns: 130px 150px 1fr auto;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            font-family: 'Inter', sans-serif;
+            transition: background 0.15s;
+        }
+        .search-resultado-fila:hover { background: rgba(255,255,255,0.04); }
+
+        .search-res-hora {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+            white-space: nowrap;
+        }
+        .search-res-salon {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: rgba(255,255,255,0.5);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .search-res-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .search-res-nombre {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .search-res-prof {
+            font-size: 12.5px;
+            color: rgba(255,255,255,0.5);
+            white-space: nowrap;
+        }
+        .search-res-grupo {
+            font-size: 11.5px;
+            color: rgba(255,255,255,0.35);
+            background: rgba(255,255,255,0.07);
+            padding: 2px 8px;
+            border-radius: 6px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* Texto resaltado en los resultados */
+        .search-highlight {
+            color: #90AEEA;
+            font-weight: 700;
+        }
+
+        .search-sin-resultados {
+            padding: 32px 20px;
+            text-align: center;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            color: rgba(255,255,255,0.35);
+            font-style: italic;
+        }
+
+        /* Leyenda debajo */
+        .search-leyenda {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 8px 0;
+        }
+        .search-leyenda-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 12.5px;
+            color: rgba(255,255,255,0.4);
+        }
+        .search-leyenda-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .search-leyenda-dot.clase { background: rgba(144,174,234,0.7); }
+        .search-leyenda-dot.mant { background: #e0a83d; }
+        .search-leyenda-dot.libre { background: rgba(255,255,255,0.35); }
+        .restante-list { display:none; grid-template-columns:200px; width:100%; margin-top:24px; border-radius:20px; overflow:hidden; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.02); }
+        .restante-list.active { display:grid; }
+        .schedule-wrapper.oculto-por-restante { display:none !important; }
+        .rh-cell { padding:12px 8px; text-align:center; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:4px; color:rgba(255,255,255,0.55); font-size:13px; font-weight:600; background:rgba(255,255,255,0.04); border-bottom:1px solid rgba(255,255,255,0.1); min-width:0; overflow:hidden; }
+        .rh-cell.rh-salon-label { justify-content:flex-start; text-transform:uppercase; letter-spacing:0.4px; font-size:12px; flex-wrap:nowrap; }
+        .rh-cell.rh-actual { color:#90AEEA; }
+        .rh-now-tag { display:inline-block; background:rgba(144,174,234,0.18); color:#90AEEA; font-size:10px; font-weight:700; padding:2px 9px; border-radius:20px; letter-spacing:0.3px; text-transform:uppercase; }
+        .restante-room-name { padding:14px 16px; display:flex; align-items:center; font-size:14px; font-weight:600; color:#fff; border-right:1px solid rgba(255,255,255,0.08); border-bottom:1px solid rgba(255,255,255,0.08); line-height:1.25; }
+        .restante-class-cell { padding:6px; display:flex; align-items:stretch; border-right:1px solid rgba(255,255,255,0.05); border-bottom:1px solid rgba(255,255,255,0.08); min-width:0; min-height:88px; overflow:hidden; }
+        .restante-class-cell .class-card { width:100%; min-width:0; overflow:hidden; }
+        .restante-class-cell .prof-name, .restante-class-cell .class-subject, .restante-class-cell .room-code { overflow-wrap:break-word; word-break:break-word; max-width:100%; }
+        .restante-class-cell.vacio { color:rgba(255,255,255,0.2); align-items:center; justify-content:center; }
+        .restante-col-actual { background:rgba(144,174,234,0.05); }
+        .rh-cell.rh-atenuada { opacity:0.45; }
+        .restante-col-atenuada { opacity:0.45; }
+        .restante-col-atenuada .class-card { filter:grayscale(15%); }
+
+        @media (max-width:1100px) and (min-width:769px) {
+            .class-card .prof-name { font-size:11px !important; line-height:1.15 !important; }
+            .class-card .class-subject { font-size:10.5px !important; line-height:1.2 !important; padding-right:4px !important; }
+            .room-code { font-size:10.5px !important; }
+            .class-card { padding:8px 8px !important; min-height:80px !important; }
+        }
+
+        /* ══════════════════════════════════
+           MÓVIL
+        ══════════════════════════════════ */
+        .mobile-schedule { display:none; }
+
+        @media (max-width:768px) {
+            body { padding:12px 10px; }
+            .restante-list { display:none !important; }
+            .top-bar { display:flex; flex-direction:column; gap:8px; width:100%; }
+            .top-bar-row1 { display:flex; align-items:center; gap:8px; width:100%; }
+            .day-selector { padding:6px 10px; border-radius:10px; flex-shrink:0; }
+            .day-text { font-size:14px; }
+            .status-dot { display:none; }
+            .chevron-icon { width:14px; height:14px; }
+            .toggle-switch { width:42px; height:24px; flex-shrink:0; }
+            .toggle-slider:before { height:16px; width:16px; bottom:3px; left:3px; }
+            .toggle-input:checked + .toggle-slider:before { transform:translateX(18px); }
+            .time-clock { font-size:16px; margin:0 0 0 auto; flex-shrink:0; }
+            .icon-actions-group { order:10; width:100%; display:flex; justify-content:center; gap:10px; }
+            .glass-btn-icon { width:42px; height:42px; flex:none; border-radius:12px; }
+            .glass-btn-icon img { width:20px; height:20px; }
+            .search-container { width:100%; padding:8px 12px; border-radius:10px; box-sizing:border-box; }
+            .search-input { font-size:14px; }
+            .schedule-wrapper { display:none !important; }
+            .mobile-schedule { display:block; margin-top:14px; }
+            .mobile-room-nav { display:flex; align-items:center; gap:8px; margin-bottom:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:10px 12px; }
+            .mobile-nav-btn { width:32px; height:32px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#fff; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:background 0.2s; }
+            .mobile-nav-btn:hover { background:rgba(255,255,255,0.15); }
+            .mobile-nav-btn:disabled { opacity:0.25; cursor:default; }
+            .mobile-room-title { flex:1; text-align:center; font-size:14px; font-weight:600; color:#fff; line-height:1.3; }
+            .mobile-room-counter { font-size:12px; color:rgba(255,255,255,0.4); white-space:nowrap; flex-shrink:0; }
+            .mobile-slots { display:flex; flex-direction:column; gap:7px; }
+            .mobile-slot { display:flex; align-items:stretch; gap:0; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.09); border-radius:12px; overflow:hidden; min-height:64px; }
+            .mobile-slot-time { font-size:12px; font-weight:600; color:rgba(255,255,255,0.4); min-width:40px; display:flex; align-items:center; justify-content:center; border-right:1px solid rgba(255,255,255,0.08); padding:10px 6px; line-height:1.2; text-align:center; flex-shrink:0; }
+            .mobile-slot-card { flex:1; display:flex; flex-direction:column; justify-content:center; padding:10px 12px; gap:3px; }
+            .mobile-slot-card .prof-name { font-size:11px; font-weight:700; color:#90AEEA; text-transform:uppercase; line-height:1.2; margin:0; }
+            .mobile-slot-card .class-subject { font-size:12px; font-weight:400; color:#fff; line-height:1.3; }
+            .mobile-slot-card .room-code { font-size:11px; color:rgba(255,255,255,0.38); position:static; }
+            .mobile-dots { display:flex; justify-content:center; gap:6px; margin-top:14px; flex-wrap:wrap; }
+            .mobile-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,0.2); cursor:pointer; transition:background 0.2s, transform 0.2s; }
+            .mobile-dot.active { background:#fff; transform:scale(1.4); }
+            .mobile-slot.col-actual-mobile { background:rgba(255,255,255,0.09); border-color:rgba(255,255,255,0.22); }
+            .mobile-slot.col-atenuada-mobile { opacity:0.45; }
+            .mobile-now-tag { display:inline-block; background:rgba(144,174,234,0.18); color:#90AEEA; font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; letter-spacing:0.3px; text-transform:uppercase; vertical-align:middle; margin-left:4px; }
+            .swap-dialog { padding:22px 18px 20px; }
+            .swap-title { font-size:20px; }
+            .swap-actions { flex-direction:column; }
+            .edit-dialog { padding:20px 18px 18px; max-height:88vh; }
+            .edit-title { font-size:20px; }
+            .edit-row2 { grid-template-columns:1fr; gap:10px; }
+            .edit-type-tab { font-size:11.5px; padding:8px 4px; }
+            .edit-actions { flex-direction:column; }
+            .edit-btn { width:100%; }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<svg style="width:0;height:0;position:absolute;z-index:-1;">
+    <defs>
+        <filter id="container-glass"><feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="2" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="8"/></filter>
+        <filter id="btn-glass"><feGaussianBlur stdDeviation="4"/></filter>
+    </defs>
+</svg>
+<svg style="width:0;height:0;position:absolute;z-index:-1;">
+    <defs>
+        <filter id="large-glass"><feGaussianBlur in="SourceGraphic" stdDeviation="15"/><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/></filter>
+        <filter id="small-glass"><feGaussianBlur in="SourceGraphic" stdDeviation="5"/></filter>
+    </defs>
+</svg>
+
+<div class="obs-overlay" id="obs-overlay" onclick="closeObsPanel()"></div>
+<div class="obs-panel" id="obs-panel">
+    <div class="obs-content">
+        <h1 class="obs-main-title">Observaciones</h1>
+        <p class="obs-subtitle">Estos son los pendientes u observaciones disponibles.</p>
+        <h2 class="obs-section-title">Pendientes Generales</h2>
+        <textarea class="obs-textarea" id="obs-input" placeholder="Escribe un pendiente o nota general..."></textarea>
+        <button class="obs-add-btn" onclick="addPendiente()">+ Añadir Pendiente</button>
+        <div class="obs-list" id="obs-list">
+            <div class="obs-item">
+                <div class="obs-item-text" ondblclick="editarPendiente(this)">Esto es un ejemplo de un pendiente reunión semana tecnológica 10 de junio 2pm</div>
+                <div class="obs-item-footer">
+                    <span class="obs-item-meta">User 01 jun, 15:44</span>
+                    <div class="obs-item-actions">
+                        <button class="obs-icon-btn" title="Editar" onclick="editarPendiente(this.closest('.obs-item').querySelector('.obs-item-text,.obs-item-edit'))"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        <button class="obs-icon-btn" title="Eliminar" onclick="this.closest('.obs-item').remove()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e05252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="obs-divider"></div>
+        <h2 class="obs-section-title">Observaciones por Celda</h2>
+        <div id="obs-per-cell-list" class="obs-per-cell-list"></div>
+        <p class="obs-empty-text" id="obs-per-cell-empty">No hay observaciones por celda. Añádelas desde el editor<br>de cada clase.</p>
+    </div>
+</div>
+
+<div class="swap-backdrop" id="swap-backdrop">
+    <div class="swap-dialog">
+        <h2 class="swap-title">Intercambiar Clases</h2>
+        <p class="swap-desc" id="swap-desc">Vas a intercambiar las clases entre (Nombre sala) y (Nombre sala). ¿Por cuánto tiempo será válido?</p>
+        <div class="swap-option selected" id="opt-permanente" onclick="selectSwapOption('permanente')"><div class="swap-radio"><div class="swap-radio-dot"></div></div><div><div class="swap-option-label">Permanente</div><div class="swap-option-sub">El intercambio queda hasta que se elimine manualmente</div></div></div>
+        <div class="swap-option" id="opt-fecha" onclick="selectSwapOption('fecha')"><div class="swap-radio"><div class="swap-radio-dot"></div></div><div><div class="swap-option-label">Hasta una fecha y hora especifica</div><div class="swap-option-sub">Al pasar esa fecha, el intercambio se deshace automáticamente</div></div></div>
+        <div class="swap-fecha-fields" id="swap-fecha-fields">
+            <input type="date" class="edit-input" id="swap-fecha" placeholder="Fecha límite">
+            <input type="time" class="edit-input" id="swap-hora" placeholder="Hora límite">
+        </div>
+        <p class="swap-error" id="swap-error"></p>
+        <div class="swap-actions">
+            <button class="swap-btn swap-btn-cancel" onclick="cancelSwap()">Cancelar</button>
+            <button class="swap-btn swap-btn-confirm" onclick="confirmSwap()">Confirmar Intercambio</button>
+        </div>
+    </div>
+</div>
+
+<div class="edit-backdrop" id="edit-backdrop">
+    <div class="edit-dialog">
+        <div class="edit-header">
+            <span class="edit-title">Editar Celda</span>
+            <div class="edit-novo-toggle">
+                <span class="edit-novo-label">No viene</span>
+                <div class="nv-switch"><input type="checkbox" id="edit-ausente-toggle"><label for="edit-ausente-toggle" class="nv-slider"></label></div>
+            </div>
+        </div>
+        <p class="edit-subtitle" id="edit-context">Lunes: 16-18 Laboratorio de Bases de Datos Avanzadas</p>
+        <div class="edit-field-label">Tipo</div>
+        <div class="edit-type-tabs">
+            <div class="edit-type-tab active" data-type="clase" onclick="selectEditType('clase')">Clase</div>
+            <div class="edit-type-tab" data-type="mantenimiento" onclick="selectEditType('mantenimiento')">Mantenimiento</div>
+            <div class="edit-type-tab" data-type="libre" onclick="selectEditType('libre')">Libre</div>
+            <div class="edit-type-tab" data-type="vaciar" onclick="selectEditType('vaciar')">Vaciar</div>
+        </div>
+        <div id="edit-clase-fields">
+            <div class="edit-section"><div class="edit-field-label">Nombre de la Clase</div><input type="text" class="edit-input" id="edit-nombre-clase" placeholder="Ej: Bases de Datos Avanzadas"></div>
+            <div class="edit-row2">
+                <div><div class="edit-field-label">Código</div><input type="text" class="edit-input" id="edit-codigo" placeholder="2025784"></div>
+                <div><div class="edit-field-label">Grupo</div><input type="text" class="edit-input" id="edit-grupo" placeholder="1"></div>
+            </div>
+            <div class="edit-section"><div class="edit-field-label">Profesor</div><input type="text" class="edit-input" id="edit-profesor" placeholder="Nombre Profesor"></div>
+        </div>
+        <div class="edit-section">
+            <div class="edit-field-label">Duración</div>
+            <div class="edit-duration-option selected" id="dur-permanente" onclick="selectDuration('permanente')"><div class="edit-radio"><div class="edit-radio-dot"></div></div><span class="edit-duration-label">Permanente</span></div>
+            <div class="edit-duration-option" id="dur-fecha" onclick="selectDuration('fecha')"><div class="edit-radio"><div class="edit-radio-dot"></div></div><span class="edit-duration-label">Hasta una fecha y hora</span></div>
+            <div class="edit-fecha-fields" id="edit-fecha-fields"><input type="date" class="edit-input" id="edit-fecha"><input type="time" class="edit-input" id="edit-hora"></div>
+        </div>
+        <div class="edit-section">
+            <div class="edit-field-label">Observaciones</div>
+            <textarea class="edit-obs-textarea" id="edit-obs-input" placeholder="Añadir observación a esta celda..."></textarea>
+            <button class="edit-add-obs-btn" onclick="addCellObservacion()">+ Añadir observación</button>
+            <div class="edit-obs-list" id="edit-obs-list"></div>
+        </div>
+        <div class="edit-actions">
+            <button class="edit-btn edit-btn-delete" onclick="borrarEdicion()">Borrar Edición</button>
+            <button class="edit-btn edit-btn-cancel" onclick="cancelEdit()">Cancelar</button>
+            <button class="edit-btn edit-btn-save" onclick="guardarEdit()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<div class="login-screen" id="login-screen">
+    <div class="login-card">
+        <img src="img/logo.webp" alt="Logo" class="login-logo">
+        <p class="login-subtitle">Inicia sesión para modificar los horarios</p>
+        <button class="login-google-btn" id="btn-google-login-full">
+            <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Iniciar sesión con Google
+        </button>
+        <button class="login-continue-link" id="btn-continuar-sin-sesion">Continuar sin iniciar sesión (solo lectura)</button>
+    </div>
+</div>
+
+<header class="top-bar">
+    <div class="top-bar-row1">
+        <div class="glass-panel day-selector" id="day-selector-btn">
+            <span class="day-text" id="day-text">Miercoles</span>
+            <span class="status-dot" id="status-dot"></span>
+            <svg class="chevron-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="toggle-switch">
+            <input type="checkbox" id="header-toggle" class="toggle-input">
+            <label for="header-toggle" class="glass-panel toggle-slider"></label>
+        </div>
+        <div class="time-clock" id="reloj">10:46</div>
+    </div>
+    <div class="glass-panel search-container">
+        <svg class="search-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#727171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search-input" class="search-input" placeholder="Buscar por salón, profesor o clase..." autocomplete="off"/>
+    </div>
+    <div class="icon-actions-group">
+        <button class="glass-btn-icon" title="Observaciones" id="btn-observaciones"><img src="img/Observaciones.webp" alt="Observaciones"></button>
+        <a href="actividades.html"><button class="glass-btn-icon" title="Actividades"><img src="img/Actividades.webp" alt="Actividades"></button></a>
+        <a href="passwords.html"><button class="glass-btn-icon" title="Passwords"><img src="img/Passwords.webp" alt="Passwords"></button></a>
+        <a href="problemas.html"><button class="glass-btn-icon" title="Problems"><img src="img/Problems.webp" alt="Problems"></button></a>
+        <button class="glass-btn-icon profile-btn" title="Iniciar sesión" id="btn-login">
+            <img src="img/Wizard.webp" alt="Perfil" class="profile-img" id="profile-img">
+        </button>
+    </div>
+</header>
+
+<div class="account-dropdown" id="account-dropdown">
+    <div id="account-logged-out">
+        <button class="account-google-btn" id="btn-google-login">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+            Iniciar sesión con Google
+        </button>
+    </div>
+    <div id="account-logged-in" style="display:none;">
+        <div class="account-user-info">
+            <img id="account-user-photo" class="account-user-photo" src="" alt="">
+            <div>
+                <div class="account-user-name" id="account-user-name">—</div>
+                <div class="account-user-email" id="account-user-email">—</div>
+            </div>
+        </div>
+        <div class="account-role-tag" id="account-role-tag">Solo lectura</div>
+        <div class="account-divider"></div>
+        <button class="account-action-btn" id="btn-export-excel">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar Excel
+        </button>
+        <button class="account-action-btn" id="btn-import-excel" style="display:none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Importar Excel
+        </button>
+        <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none;">
+        <button class="account-action-btn" id="btn-gestionar-admins" style="display:none;" onclick="abrirPanelAdmins()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Gestionar Administradores
+        </button>
+        <div class="account-divider"></div>
+        <button class="account-logout-btn" id="btn-logout">Cerrar sesión</button>
+    </div>
+</div>
+
+<!-- Panel de gestión de administradores -->
+<div class="admins-panel-backdrop" id="admins-panel-backdrop">
+    <div class="admins-panel-dialog">
+        <h2 class="ap-title">Gestionar Administradores</h2>
+        <p class="ap-desc">Las personas que inicien sesión aparecerán en esta lista. Conviértelas en administrador para que puedan editar el horario.</p>
+        <div class="ap-search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="ap-buscar" placeholder="Buscar por nombre o correo...">
+        </div>
+        <div id="ap-lista"><div class="ap-loading">Cargando usuarios...</div></div>
+        <button class="ap-btn-cerrar" onclick="cerrarPanelAdmins()">Cerrar</button>
+    </div>
+</div>
+
+<div class="import-backdrop" id="import-backdrop">
+    <div class="import-dialog">
+        <h2 class="import-title">Importar Horario desde Excel</h2>
+        <p class="import-desc">Revisa el resumen antes de confirmar. <strong>Esto reemplazará todo el horario actual.</strong></p>
+        <div class="import-summary" id="import-summary"></div>
+        <div class="import-errors" id="import-errors"></div>
+        <div class="import-actions">
+            <button class="import-btn import-btn-cancel" id="btn-cancel-import">Cancelar</button>
+            <button class="import-btn import-btn-confirm" id="btn-confirm-import" disabled>Confirmar e Importar</button>
+        </div>
+    </div>
+</div>
+
+<div class="day-dropdown" id="day-dropdown">
+    <div class="day-dropdown-item" data-day="Lunes">Lunes<span class="day-hoy-tag">Hoy</span></div>
+    <div class="day-dropdown-item" data-day="Martes">Martes<span class="day-hoy-tag">Hoy</span></div>
+    <div class="day-dropdown-item" data-day="Miercoles">Miercoles<span class="day-hoy-tag">Hoy</span></div>
+    <div class="day-dropdown-item" data-day="Jueves">Jueves<span class="day-hoy-tag">Hoy</span></div>
+    <div class="day-dropdown-item" data-day="Viernes">Viernes<span class="day-hoy-tag">Hoy</span></div>
+    <div class="day-dropdown-item" data-day="Sabado">Sabado<span class="day-hoy-tag">Hoy</span></div>
+</div>
+
+<main class="schedule-wrapper">
+    <div class="schedule-grid" id="schedule-grid">
+        <div class="grid-cell header-cell top-left-cell">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Salón
+        </div>
+        <div class="grid-cell header-cell" data-col-hour="0">6-8</div>
+        <div class="grid-cell header-cell" data-col-hour="1">8-10</div>
+        <div class="grid-cell header-cell" data-col-hour="2">10-12</div>
+        <div class="grid-cell header-cell" data-col-hour="3">12-14</div>
+        <div class="grid-cell header-cell" data-col-hour="4">14-16</div>
+        <div class="grid-cell header-cell" data-col-hour="5">16-18</div>
+        <div class="grid-cell header-cell" data-col-hour="6">18-20</div>
+        <div class="grid-cell header-cell" data-col-hour="7">20-22</div>
+        <div id="schedule-grid-rows-placeholder" style="grid-column:1/-1;padding:40px;text-align:center;color:rgba(255,255,255,0.4);font-family:'Inter',sans-serif;">Cargando horario...</div>
+    </div>
+</main>
+
+<div class="restante-list" id="restante-list"></div>
+
+<!-- PANEL DE BÚSQUEDA — aparece bajo la grilla cuando hay texto en el buscador -->
+<div class="search-results-panel" id="search-results-panel">
+    <!-- Resultados del día actual (grilla filtrada) se muestran en la grilla normal -->
+    <div class="search-otros-dias" id="search-otros-dias"></div>
+    <div class="search-leyenda">
+        <span class="search-leyenda-item"><span class="search-leyenda-dot clase"></span>Clase</span>
+        <span class="search-leyenda-item"><span class="search-leyenda-dot mant"></span>Mantenimiento</span>
+        <span class="search-leyenda-item"><span class="search-leyenda-dot libre"></span>Práctica libre</span>
+    </div>
+</div>
+
+<div class="mobile-schedule" id="mobile-schedule">
+    <div class="mobile-room-nav">
+        <button class="mobile-nav-btn" id="mob-prev" onclick="mobileNav(-1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <span class="mobile-room-title" id="mob-room-title">—</span>
+        <span class="mobile-room-counter" id="mob-counter">1 / 9</span>
+        <button class="mobile-nav-btn" id="mob-next" onclick="mobileNav(1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+    </div>
+    <div class="mobile-slots" id="mob-slots"></div>
+    <div class="mobile-dots" id="mob-dots"></div>
+</div>
+
+<script>
+/* ══ SUPABASE ══ */
+const SUPABASE_URL = 'https://nwjcuosceidgnfyfeuqe.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_H95FvNeaJdxrWTAJElW-FA_K_thenik';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentUser = null;
+let isCurrentUserAdmin = false;
+
+async function checkIsAdmin(email) {
+    if (!email) return false;
+    const { data, error } = await supabaseClient.from('admins').select('email').eq('email', email).maybeSingle();
+    return !error && !!data;
+}
+
+async function refreshAuthUI() {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    currentUser = session ? session.user : null;
+    const profileImg = document.getElementById('profile-img');
+    const loggedOutBox = document.getElementById('account-logged-out');
+    const loggedInBox = document.getElementById('account-logged-in');
+        if (currentUser) {
+        isCurrentUserAdmin = await checkIsAdmin(currentUser.email);
+        const photo = currentUser.user_metadata?.avatar_url || 'img/Wizard.webp';
+        const name = currentUser.user_metadata?.full_name || currentUser.email;
+        profileImg.src = photo;
+        document.getElementById('account-user-photo').src = photo;
+        document.getElementById('account-user-name').textContent = name;
+        document.getElementById('account-user-email').textContent = currentUser.email;
+        const roleTag = document.getElementById('account-role-tag');
+        roleTag.textContent = isCurrentUserAdmin ? 'Administrador' : 'Solo lectura';
+        roleTag.classList.toggle('es-admin', isCurrentUserAdmin);
+        loggedOutBox.style.display = 'none';
+        loggedInBox.style.display = 'block';
+        registrarUsuarioApp(currentUser);
+    } else {
+        isCurrentUserAdmin = false;
+        profileImg.src = 'img/Wizard.webp';
+        loggedOutBox.style.display = 'block';
+        loggedInBox.style.display = 'none';
+    }
+    const btnGestionAdmins = document.getElementById('btn-gestionar-admins');
+    if (btnGestionAdmins) btnGestionAdmins.style.display = isCurrentUserAdmin ? 'flex' : 'none';
+    aplicarPermisosEdicion();
+    actualizarPantallaLogin();
+}
+
+/* Registra (o actualiza) al usuario en usuarios_app cada vez que inicia sesión.
+   Esto es lo que permite que el panel de admins vea quién se ha registrado. */
+async function registrarUsuarioApp(user) {
+    try {
+        await supabaseClient.from('usuarios_app').upsert({
+            email: user.email,
+            nombre: user.user_metadata?.full_name || user.email,
+            foto_url: user.user_metadata?.avatar_url || null,
+            ultimo_login: new Date().toISOString()
+        }, { onConflict: 'email' });
+    } catch (err) {
+        console.error('Error registrando usuario:', err);
+    }
+}
+
+function actualizarPantallaLogin() {
+    const screen = document.getElementById('login-screen');
+    const yaEligioContinuar = sessionStorage.getItem('continuar_sin_sesion') === 'true';
+    screen.classList.toggle('show', !currentUser && !yaEligioContinuar);
+}
+
+document.getElementById('btn-google-login-full').addEventListener('click', async () => {
+    await supabaseClient.auth.signInWithOAuth({ provider:'google', options:{ redirectTo:window.location.href } });
+});
+document.getElementById('btn-continuar-sin-sesion').addEventListener('click', () => {
+    sessionStorage.setItem('continuar_sin_sesion','true');
+    document.getElementById('login-screen').classList.remove('show');
+});
+function aplicarPermisosEdicion() {
+    document.body.classList.toggle('modo-solo-lectura', !isCurrentUserAdmin);
+    const btnImport = document.getElementById('btn-import-excel');
+    if (btnImport) btnImport.style.display = isCurrentUserAdmin ? 'flex' : 'none';
+}
+document.getElementById('btn-login').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dropdown = document.getElementById('account-dropdown');
+    const isOpening = !dropdown.classList.contains('open');
+    if (isOpening) {
+        const btn = document.getElementById('btn-login');
+        const rect = btn.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 8) + 'px';
+        dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+        dropdown.classList.add('open');
+    } else { dropdown.classList.remove('open'); }
+});
+document.getElementById('account-dropdown').addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => document.getElementById('account-dropdown').classList.remove('open'));
+document.getElementById('btn-google-login').addEventListener('click', async () => {
+    await supabaseClient.auth.signInWithOAuth({ provider:'google', options:{ redirectTo:window.location.href } });
+});
+document.getElementById('btn-logout').addEventListener('click', async () => {
+    await supabaseClient.auth.signOut();
+    document.getElementById('account-dropdown').classList.remove('open');
+    refreshAuthUI();
+});
+supabaseClient.auth.onAuthStateChange((_event, _session) => { refreshAuthUI(); });
+refreshAuthUI();
+
+/* ══ RELOJ ══ */
+function actualizarReloj() {
+    document.getElementById('reloj').textContent = new Date().toLocaleTimeString('es-CO',{timeZone:'America/Bogota',hour:'2-digit',minute:'2-digit',hour12:false});
+}
+actualizarReloj();
+setInterval(actualizarReloj, 1000);
+
+/* ══ SELECTOR DE DÍA ══ */
+const DIAS_SEMANA = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+function getDiaHoyBogota() {
+    const ahora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Bogota'}));
+    const idx = ahora.getDay();
+    return idx === 0 ? null : DIAS_SEMANA[idx-1];
+}
+function marcarDiaHoyEnDropdown() {
+    const diaHoy = getDiaHoyBogota();
+    document.querySelectorAll('.day-dropdown-item').forEach(item => item.classList.toggle('dia-hoy', item.dataset.day === diaHoy));
+}
+function actualizarStatusDot() {
+    const dot = document.getElementById('status-dot');
+    dot.style.display = (document.getElementById('day-text').textContent.trim() === getDiaHoyBogota()) ? '' : 'none';
+}
+function seleccionarDia(dia) {
+    document.getElementById('day-text').textContent = dia;
+    document.querySelectorAll('.day-dropdown-item').forEach(item => item.classList.toggle('dia-seleccionado', item.dataset.day === dia));
+    closeDayDropdown();
+    actualizarStatusDot();
+    if (typeof recargarHorarioCompleto === 'function') recargarHorarioCompleto();
+}
+function toggleDayDropdown(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('day-dropdown');
+    const isOpening = !dropdown.classList.contains('open');
+    if (isOpening) {
+        const rect = document.getElementById('day-selector-btn').getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 8) + 'px';
+        dropdown.style.left = rect.left + 'px';
+        dropdown.classList.add('open');
+    } else { dropdown.classList.remove('open'); }
+}
+function closeDayDropdown() { document.getElementById('day-dropdown').classList.remove('open'); }
+document.getElementById('day-selector-btn').addEventListener('click', toggleDayDropdown);
+document.querySelectorAll('.day-dropdown-item').forEach(item => {
+    item.addEventListener('click', (e) => { e.stopPropagation(); seleccionarDia(item.dataset.day); });
+});
+document.addEventListener('click', closeDayDropdown);
+document.getElementById('day-dropdown').addEventListener('click', (e) => e.stopPropagation());
+window.addEventListener('scroll', () => {
+    const dropdown = document.getElementById('day-dropdown');
+    if (dropdown.classList.contains('open')) {
+        const rect = document.getElementById('day-selector-btn').getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 8) + 'px';
+        dropdown.style.left = rect.left + 'px';
+    }
+}, true);
+window.addEventListener('resize', closeDayDropdown);
+marcarDiaHoyEnDropdown();
+
+// Seleccionar automáticamente el día real de hoy al abrir la página.
+// Si es domingo (no hay clases), se queda en Lunes por defecto.
+(function() {
+    const diaHoy = getDiaHoyBogota();
+    const diaInicial = diaHoy || 'Lunes';
+    document.getElementById('day-text').textContent = diaInicial;
+    document.querySelectorAll('.day-dropdown-item').forEach(item => {
+        item.classList.toggle('dia-seleccionado', item.dataset.day === diaInicial);
+    });
+    actualizarStatusDot();
+})();
+
+/* ══ MODO HORARIO RESTANTE ══ */
+const FRANJAS_INICIO = [6,8,10,12,14,16,18,20];
+const GRACIA_MIN = 30;
+function getColumnaRealIndex() {
+    const ahora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Bogota'}));
+    const m = ahora.getHours()*60+ahora.getMinutes();
+    for (let i=0;i<FRANJAS_INICIO.length;i++) {
+        const ini=FRANJAS_INICIO[i]*60, fin=(i<FRANJAS_INICIO.length-1?FRANJAS_INICIO[i+1]*60:22*60);
+        if(m>=ini&&m<fin) return i;
+    }
+    return m<FRANJAS_INICIO[0]*60?-1:FRANJAS_INICIO.length;
+}
+function getRangoVisibleHorario() {
+    const ahora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Bogota'}));
+    const m = ahora.getHours()*60+ahora.getMinutes();
+    const actual = getColumnaRealIndex();
+    if(actual<0||actual>=FRANJAS_INICIO.length) return {primeraVisible:actual,actual};
+    const dentroDeGracia=(m-FRANJAS_INICIO[actual]*60)<GRACIA_MIN;
+    const primeraVisible=(dentroDeGracia&&actual>0)?actual-1:actual;
+    return {primeraVisible,actual};
+}
+function getColumnaActualIndex() { return getRangoVisibleHorario().primeraVisible; }
+function aplicarModoHorario() {
+    const toggle = document.getElementById('header-toggle');
+    const modoRestante = toggle.checked;
+    const desktopGrid = document.querySelector('.schedule-wrapper');
+    const listView = document.getElementById('restante-list');
+    if (modoRestante) { desktopGrid.classList.add('oculto-por-restante'); listView.classList.add('active'); renderRestanteList(); }
+    else { desktopGrid.classList.remove('oculto-por-restante'); listView.classList.remove('active'); }
+    actualizarVistaMovilModo();
+}
+function renderRestanteList() {
+    const {primeraVisible, actual} = getRangoVisibleHorario();
+    const grid = document.getElementById('restante-list');
+    if(actual<0||actual>=TIMES.length) {
+        grid.style.gridTemplateColumns='1fr';
+        grid.innerHTML=`<div class="restante-room-name" style="border-right:none;border-bottom:none;color:rgba(255,255,255,0.4);font-style:italic;font-weight:400;">${actual<0?'Aún no inicia la jornada.':'La jornada de hoy ya finalizó.'}</div>`;
+        return;
+    }
+    const franjasRestantes=[];
+    for(let i=primeraVisible;i<TIMES.length;i++) franjasRestantes.push(i);
+    const colTemplate=`200px repeat(${franjasRestantes.length}, 1fr)`;
+    grid.style.gridTemplateColumns=colTemplate;
+    let html='';
+    html+=`<div class="rh-cell rh-salon-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Salón</div>`;
+    franjasRestantes.forEach(idx=>{
+        const esActual=idx===actual, esAnt=idx<actual;
+        const[h1,h2]=TIMES[idx].split('-');
+        html+=`<div class="rh-cell${esActual?' rh-actual':''}${esAnt?' rh-atenuada':''}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${h1}:00 - ${h2}:00${esActual?'<span class="rh-now-tag">Ahora</span>':''}</div>`;
+    });
+    ROOMS.forEach(room=>{
+        html+=`<div class="restante-room-name">${room.name}</div>`;
+        franjasRestantes.forEach(idx=>{
+            const slot=room.slots[idx], esActual=idx===actual, esAnt=idx<actual;
+            let cardClass='class-card', cardInner='', dataAttrs='';
+            if(slot&&slot.tipo==='mantenimiento'){cardClass+=' tipo-mantenimiento';cardInner=`<span class="estado-label">Mantenimiento</span>`;if(slot.celdaId)dataAttrs+=` data-celda-id="${slot.celdaId}"`;}
+            else if(slot&&slot.tipo==='libre'){cardClass+=' tipo-libre';cardInner=`<span class="estado-label">Practica Libre</span>`;if(slot.celdaId)dataAttrs+=` data-celda-id="${slot.celdaId}"`;}
+            else if(slot&&slot.subject){cardInner=`<span class="prof-name${slot.ausente?' ausente':''}">${slot.prof}</span><span class="class-subject">${slot.subject}</span><span class="room-code">${slot.grupo?'G'+slot.grupo:''}</span>`;if(slot.celdaId)dataAttrs+=` data-celda-id="${slot.celdaId}"`;if(slot.code)dataAttrs+=` data-codigo="${slot.code}"`;if(slot.grupo)dataAttrs+=` data-grupo="${slot.grupo}"`;}
+            else{cardClass+=' tipo-vacio';}
+            const claseExtra=esActual?' restante-col-actual':(esAnt?' restante-col-atenuada':'');
+            html+=`<div class="restante-class-cell card-wrapper${claseExtra}" data-hora-idx="${idx}"><div class="${cardClass}"${dataAttrs}>${cardInner}</div></div>`;
+        });
+    });
+    grid.innerHTML=html;
+    if(typeof initDragAndDropCards==='function') initDragAndDropCards();
+}
+document.getElementById('header-toggle').addEventListener('change', aplicarModoHorario);
+setInterval(()=>{ if(document.getElementById('header-toggle').checked) aplicarModoHorario(); },30000);
+
+/* ══ OBSERVACIONES ══ */
+function openObsPanel(){document.getElementById('obs-panel').classList.add('open');document.getElementById('obs-overlay').classList.add('open');}
+function closeObsPanel(){document.getElementById('obs-panel').classList.remove('open');document.getElementById('obs-overlay').classList.remove('open');}
+document.getElementById('btn-observaciones').addEventListener('click', openObsPanel);
+function editarPendiente(el){
+    if(el.tagName==='TEXTAREA') return;
+    const txt=el.innerText;
+    const ta=document.createElement('textarea');ta.className='obs-item-edit';ta.value=txt;
+    el.replaceWith(ta);ta.focus();
+    function guardar(){const n=document.createElement('div');n.className='obs-item-text';n.innerText=ta.value.trim()||txt;n.ondblclick=()=>editarPendiente(n);ta.replaceWith(n);}
+    ta.addEventListener('blur',guardar);
+    ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();guardar();}if(e.key==='Escape'){ta.value=txt;guardar();}});
+}
+function addPendiente(){
+    const input=document.getElementById('obs-input');const text=input.value.trim();if(!text)return;
+    const now=new Date();const months=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const meta=`User ${now.getDate().toString().padStart(2,'0')} ${months[now.getMonth()]}, ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    const item=document.createElement('div');item.className='obs-item';
+    const textEl=document.createElement('div');textEl.className='obs-item-text';textEl.innerText=text;textEl.ondblclick=()=>editarPendiente(textEl);
+    const footer=document.createElement('div');footer.className='obs-item-footer';
+    footer.innerHTML=`<span class="obs-item-meta">${meta}</span><div class="obs-item-actions"><button class="obs-icon-btn" title="Editar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="obs-icon-btn" title="Eliminar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e05252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></div>`;
+    footer.querySelector('[title="Editar"]').addEventListener('click',()=>editarPendiente(item.querySelector('.obs-item-text,.obs-item-edit')));
+    footer.querySelector('[title="Eliminar"]').addEventListener('click',()=>item.remove());
+    item.appendChild(textEl);item.appendChild(footer);
+    document.getElementById('obs-list').appendChild(item);input.value='';
+}
+(function(){
+    const ini=document.querySelector('.obs-item');if(!ini)return;
+    ini.querySelector('[title="Editar"]').addEventListener('click',()=>editarPendiente(ini.querySelector('.obs-item-text,.obs-item-edit')));
+    ini.querySelector('[title="Eliminar"]').addEventListener('click',()=>ini.remove());
+})();
+
+/* ══ DRAG & DROP ══ */
+let dragSrc=null,swapTarget=null;
+function initDragAndDropCards(){
+    document.querySelectorAll('.class-card').forEach(card=>{
+        card.setAttribute('draggable',true);
+        card.addEventListener('dragstart',function(e){if(!isCurrentUserAdmin){e.preventDefault();return;}dragSrc=this.closest('.card-wrapper');this.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
+        card.addEventListener('dragend',function(){this.classList.remove('dragging');document.querySelectorAll('.card-wrapper').forEach(w=>w.classList.remove('drag-over'));});
+        let didDrag=false;
+        card.addEventListener('dragstart',()=>{didDrag=true;});
+        card.addEventListener('click',function(e){if(didDrag){didDrag=false;return;}openEditCell(this);});
+    });
+    document.querySelectorAll('.card-wrapper').forEach(w=>{
+        w.addEventListener('dragover',e=>{e.preventDefault();if(w!==dragSrc){document.querySelectorAll('.card-wrapper').forEach(x=>x.classList.remove('drag-over'));w.classList.add('drag-over');}});
+        w.addEventListener('dragleave',()=>w.classList.remove('drag-over'));
+        w.addEventListener('drop',e=>{
+            e.preventDefault();w.classList.remove('drag-over');
+            if(!dragSrc||w===dragSrc)return;
+            // Validar misma franja antes de abrir el diálogo
+            if(getFranjaIdx(dragSrc)!==getFranjaIdx(w)||getFranjaIdx(w)===-1){
+                dragSrc=null;
+                alert('Solo puedes intercambiar clases de la misma franja horaria.\nEj: una clase de 8-10 solo puede cambiar con otra clase de 8-10.');
+                return;
+            }
+            swapTarget=w;
+            document.getElementById('swap-desc').textContent=`Vas a intercambiar las clases entre ${getRoomNameForWrapper(dragSrc)} y ${getRoomNameForWrapper(swapTarget)}. ¿Por cuánto tiempo será válido?`;
+            document.getElementById('swap-error').textContent='';
+            document.getElementById('swap-fecha').value='';
+            document.getElementById('swap-hora').value='';
+            document.getElementById('opt-permanente').classList.add('selected');
+            document.getElementById('opt-fecha').classList.remove('selected');
+            document.getElementById('swap-fecha-fields').classList.remove('show');
+            document.getElementById('swap-backdrop').classList.add('open');
+        });
+    });
+}
+function getRoomNameForWrapper(wrapper){
+    if(!wrapper) return 'Sala';
+    if(wrapper.classList.contains('restante-class-cell')){
+        let el=wrapper.previousElementSibling;
+        while(el){if(el.classList.contains('restante-room-name'))return el.textContent.trim();el=el.previousElementSibling;}
+        return 'Sala';
+    }
+    const all=Array.from(document.querySelectorAll('#schedule-grid > div'));
+    const cols=9,idx=all.indexOf(wrapper);
+    if(idx===-1)return 'Sala';
+    return all[Math.floor(idx/cols)*cols]?.textContent.trim()||'Sala';
+}
+function selectSwapOption(opt){
+    document.getElementById('opt-permanente').classList.toggle('selected',opt==='permanente');
+    document.getElementById('opt-fecha').classList.toggle('selected',opt==='fecha');
+    document.getElementById('swap-fecha-fields').classList.toggle('show', opt==='fecha');
+}
+function cancelSwap(){document.getElementById('swap-backdrop').classList.remove('open');dragSrc=null;swapTarget=null;}
+
+/* Obtiene el índice de franja de un card-wrapper (funciona en grilla normal y en restante) */
+function getFranjaIdx(wrapper) {
+    if (!wrapper) return -1;
+    // Vista Horario Restante: data-hora-idx guardado en el wrapper
+    if (wrapper.dataset.horaIdx !== undefined) return parseInt(wrapper.dataset.horaIdx, 10);
+    // Grilla desktop: posición en la grilla de 9 columnas
+    const all = Array.from(document.querySelectorAll('#schedule-grid > div'));
+    const cols = 9, idx = all.indexOf(wrapper);
+    if (idx === -1) return -1;
+    return (idx % cols) - 1; // 0-indexed franja (col 1 = franja 0, col 2 = franja 1, ...)
+}
+
+async function confirmSwap(){
+    const errorEl = document.getElementById('swap-error');
+    errorEl.textContent = '';
+
+    if(!dragSrc||!swapTarget)return;
+
+    // Validar que ambas celdas estén en la misma franja horaria
+    const franjaOrigen = getFranjaIdx(dragSrc);
+    const franjaDestino = getFranjaIdx(swapTarget);
+    if (franjaOrigen !== franjaDestino || franjaOrigen === -1) {
+        errorEl.textContent = 'Solo puedes intercambiar clases de la misma franja horaria.';
+        return;
+    }
+
+    // Validar fecha si eligió "hasta una fecha"
+    const esPorFecha = document.getElementById('opt-fecha').classList.contains('selected');
+    let fechaExpiracion = null;
+    if (esPorFecha) {
+        const fecha = document.getElementById('swap-fecha').value;
+        const hora = document.getElementById('swap-hora').value || '23:59';
+        if (!fecha) { errorEl.textContent = 'Debes indicar una fecha límite.'; return; }
+        fechaExpiracion = new Date(`${fecha}T${hora}:00`);
+        if (fechaExpiracion <= new Date()) { errorEl.textContent = 'La fecha límite debe ser en el futuro.'; return; }
+        fechaExpiracion = fechaExpiracion.toISOString();
+    }
+
+    // Intercambio visual
+    const s = dragSrc.querySelector('.class-card'), t = swapTarget.querySelector('.class-card');
+    if(s&&t){const tmp=s.innerHTML;s.innerHTML=t.innerHTML;t.innerHTML=tmp;
+        // Intercambiar también los data attributes de celdaId
+        const tmpId=s.dataset.celdaId;s.dataset.celdaId=t.dataset.celdaId;t.dataset.celdaId=tmpId;
+    }
+
+    // Persistir en Supabase si ambas celdas tienen ID
+    const idOrigen = s?.dataset.celdaId;
+    const idDestino = t?.dataset.celdaId;
+    if (idOrigen && idDestino && isCurrentUserAdmin) {
+        try {
+            const payload = {
+                celda_origen_id: idOrigen,
+                celda_destino_id: idDestino,
+                tipo_duracion: esPorFecha ? 'fecha' : 'permanente',
+                fecha_expiracion: fechaExpiracion
+            };
+            const { error } = await supabaseClient.from('intercambios').insert(payload);
+            if (error) throw error;
+            // Invalidar caché del día para refrescar si se recarga
+            const diaActivo = document.getElementById('day-text')?.textContent.trim();
+            if (diaActivo) invalidarCacheCeldas(diaActivo);
+        } catch(err) {
+            console.error('Error guardando intercambio:', err);
+            // El intercambio visual ya ocurrió, solo avisamos del error de persistencia
+            errorEl.textContent = 'El intercambio se aplicó visualmente pero no se pudo guardar en la base de datos.';
+            return;
+        }
+    }
+
+    document.getElementById('swap-backdrop').classList.remove('open');
+    dragSrc=null;swapTarget=null;
+}
+
+/* ══ EDITAR CELDA ══ */
+let currentEditCard=null,editType='clase',editDuration='permanente',cellObservaciones=[];
+const DIAS=['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+const HORAS=['6-8','8-10','10-12','12-14','14-16','16-18','18-20','20-22'];
+
+function getCellContext(card){
+    const wrapper=card.closest('.card-wrapper');
+    const diaActivo=document.getElementById('day-text')?document.getElementById('day-text').textContent.trim():'Lunes';
+    if(wrapper&&wrapper.classList.contains('restante-class-cell')){
+        const roomName=getRoomNameForWrapper(wrapper);
+        const horaIdx=wrapper.dataset.horaIdx!==undefined?parseInt(wrapper.dataset.horaIdx,10):-1;
+        return{roomName,hora:HORAS[horaIdx]||'',diaActivo};
+    }
+    const allCells=Array.from(document.querySelectorAll('#schedule-grid > div'));
+    const cols=9,idx=allCells.indexOf(wrapper);
+    const colIdx=idx%cols,rowStart=Math.floor(idx/cols)*cols;
+    return{roomName:allCells[rowStart]?allCells[rowStart].textContent.trim():'Sala',hora:HORAS[colIdx-1]||'',diaActivo};
+}
+
+function openEditCell(card){
+    if(!isCurrentUserAdmin)return;
+    currentEditCard=card;
+    const ctx=getCellContext(card);
+    document.getElementById('edit-context').textContent=`${ctx.diaActivo}: ${ctx.hora} ${ctx.roomName}`;
+    const profEl=card.querySelector('.prof-name'),subjEl=card.querySelector('.class-subject'),codeEl=card.querySelector('.room-code');
+    document.getElementById('edit-nombre-clase').value=subjEl?subjEl.textContent.trim():'';
+    document.getElementById('edit-profesor').value=profEl?profEl.textContent.trim():'';
+    let codigoActual,grupoActual;
+    if(card.dataset.tipo!==undefined){codigoActual=card.dataset.codigo||'';grupoActual=card.dataset.grupo||'';}
+    else{codigoActual=codeEl?codeEl.textContent.trim():'';grupoActual='';}
+    document.getElementById('edit-codigo').value=codigoActual;
+    document.getElementById('edit-grupo').value=grupoActual;
+    document.getElementById('edit-ausente-toggle').checked=profEl?profEl.classList.contains('ausente'):false;
+    const tipoActual=card.dataset.tipo||'clase';
+    selectEditType(tipoActual==='vaciar'?'clase':tipoActual);
+    selectDuration('permanente');
+    document.getElementById('edit-fecha').value='';document.getElementById('edit-hora').value='';
+
+    // Cargar observaciones desde Supabase si la celda tiene ID,
+    // o desde el dataset local si aún no fue guardada en Supabase
+    cellObservaciones = [];
+    renderCellObservaciones();
+    document.getElementById('edit-obs-input').value='';
+    document.getElementById('edit-backdrop').classList.add('open');
+
+    const celdaId = card.dataset.celdaId;
+    if (celdaId) {
+        cargarObservacionesCelda(celdaId);
+    } else {
+        // Celda sin ID aún (nueva/sin guardar): usar las que estén en dataset
+        const local = card.dataset.observaciones ? JSON.parse(card.dataset.observaciones) : [];
+        cellObservaciones = local.map(t => ({id: null, texto: t}));
+        renderCellObservaciones();
+    }
+}
+
+/* Carga observaciones de la celda desde Supabase */
+async function cargarObservacionesCelda(celdaId) {
+    try {
+        const { data, error } = await supabaseClient
+            .from('observaciones_celda')
+            .select('id, texto')
+            .eq('celda_id', celdaId)
+            .order('created_at');
+        if (error) throw error;
+        cellObservaciones = (data || []).map(o => ({id: o.id, texto: o.texto}));
+        renderCellObservaciones();
+        // Actualizar panel lateral y dataset con los datos reales
+        if (currentEditCard) {
+            const ctx = getCellContext(currentEditCard);
+            sincronizarIndicadorObservaciones(currentEditCard, cellObservaciones);
+            syncCellObservacionesToPanel(currentEditCard, ctx, cellObservaciones.map(o=>o.texto));
+        }
+    } catch(err) {
+        console.error('Error cargando observaciones:', err);
+    }
+}
+
+function selectEditType(type){
+    editType=type;
+    document.querySelectorAll('.edit-type-tab').forEach(t=>t.classList.toggle('active',t.dataset.type===type));
+    document.getElementById('edit-clase-fields').style.display=(type==='clase')?'block':'none';
+}
+document.getElementById('edit-ausente-toggle').addEventListener('change',function(){
+    if(!currentEditCard)return;
+    const profEl=currentEditCard.querySelector('.prof-name');
+    if(profEl)profEl.classList.toggle('ausente',this.checked);
+});
+function selectDuration(opt){
+    editDuration=opt;
+    document.getElementById('dur-permanente').classList.toggle('selected',opt==='permanente');
+    document.getElementById('dur-fecha').classList.toggle('selected',opt==='fecha');
+    document.getElementById('edit-fecha-fields').classList.toggle('show',opt==='fecha');
+}
+
+/* cellObservaciones ahora es [{id, texto}] donde id es el UUID de Supabase (o null si es local) */
+function renderCellObservaciones(){
+    document.getElementById('edit-obs-list').innerHTML=cellObservaciones.map((obs,i)=>
+        `<div class="edit-obs-item"><span>${obs.texto}</span><button onclick="removeCellObservacion(${i})" title="Eliminar">✕</button></div>`).join('');
+}
+
+async function addCellObservacion(){
+    const input=document.getElementById('edit-obs-input');
+    const text=input.value.trim();if(!text)return;
+    input.value='';
+
+    // Si la celda ya tiene ID en Supabase, guardar la observación inmediatamente
+    const celdaId = currentEditCard?.dataset.celdaId;
+    if (celdaId) {
+        try {
+            const { data, error } = await supabaseClient
+                .from('observaciones_celda')
+                .insert({ celda_id: celdaId, texto: text })
+                .select('id').single();
+            if (error) throw error;
+            cellObservaciones.push({id: data.id, texto: text});
+        } catch(err) {
+            console.error('Error guardando observación:', err);
+            cellObservaciones.push({id: null, texto: text}); // guardar local igual
+        }
+    } else {
+        cellObservaciones.push({id: null, texto: text});
+    }
+    renderCellObservaciones();
+    if (currentEditCard) {
+        const ctx = getCellContext(currentEditCard);
+        sincronizarIndicadorObservaciones(currentEditCard, cellObservaciones);
+        syncCellObservacionesToPanel(currentEditCard, ctx, cellObservaciones.map(o=>o.texto));
+    }
+}
+
+async function removeCellObservacion(i){
+    const obs = cellObservaciones[i];
+    // Si tiene ID de Supabase, eliminarla de la base de datos
+    if (obs.id) {
+        try {
+            const { error } = await supabaseClient.from('observaciones_celda').delete().eq('id', obs.id);
+            if (error) throw error;
+        } catch(err) {
+            console.error('Error eliminando observación:', err);
+        }
+    }
+    cellObservaciones.splice(i,1);
+    renderCellObservaciones();
+    if (currentEditCard) {
+        const ctx = getCellContext(currentEditCard);
+        sincronizarIndicadorObservaciones(currentEditCard, cellObservaciones);
+        syncCellObservacionesToPanel(currentEditCard, ctx, cellObservaciones.map(o=>o.texto));
+    }
+}
+
+/* Actualiza el punto indicador y la clase tiene-obs en la tarjeta */
+function sincronizarIndicadorObservaciones(card, observaciones) {
+    const tieneObs = observaciones.length > 0;
+    card.classList.toggle('tiene-obs', tieneObs);
+    const indicator = card.querySelector('.obs-indicator');
+    if (tieneObs && !indicator) {
+        const span = document.createElement('span');
+        span.className = 'obs-indicator';
+        span.title = 'Tiene observaciones';
+        card.appendChild(span);
+    } else if (!tieneObs && indicator) {
+        indicator.remove();
+    }
+}
+
+function cancelEdit(){document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;}
+
+/* ══ GUARDAR EDICIÓN EN SUPABASE ══ */
+async function persistirCeldaEnSupabase(card, ctx, tipo, datos) {
+    if (!isCurrentUserAdmin) return;
+
+    try {
+        const { salonesData, franjasData } = await obtenerCatalogos();
+        const salonObj = (salonesData||[]).find(s => s.nombre === ctx.roomName);
+        const franjaObj = (franjasData||[]).find(f => f.etiqueta === ctx.hora);
+        if (!salonObj || !franjaObj) { console.warn('No se encontró salón o franja para persistir.'); return; }
+
+        const payload = {
+            dia: ctx.diaActivo, salon_id: salonObj.id, franja_id: franjaObj.id, tipo,
+            nombre_clase: datos.nombre_clase || null, profesor: datos.profesor || null,
+            codigo: datos.codigo || null, grupo: datos.grupo || null, ausente: datos.ausente || false,
+        };
+
+        const celdaId = card.dataset.celdaId;
+        if (celdaId) {
+            const { error } = await supabaseClient.from('celdas').update(payload).eq('id', celdaId);
+            if (error) throw error;
+        } else {
+            const { data, error } = await supabaseClient.from('celdas')
+                .upsert({ ...payload }, { onConflict: 'dia,salon_id,franja_id' })
+                .select('id').single();
+            if (error) throw error;
+            if (data) {
+                card.dataset.celdaId = data.id;
+                // Guardar observaciones locales pendientes (las que no tienen ID aún)
+                const pendientes = cellObservaciones.filter(o => !o.id);
+                if (pendientes.length > 0) {
+                    const { data: obsData, error: obsErr } = await supabaseClient
+                        .from('observaciones_celda')
+                        .insert(pendientes.map(o => ({ celda_id: data.id, texto: o.texto })))
+                        .select('id, texto');
+                    if (!obsErr && obsData) {
+                        // Actualizar el array local con los IDs reales
+                        obsData.forEach((o, i) => { if (pendientes[i]) pendientes[i].id = o.id; });
+                    }
+                }
+            }
+        }
+
+        invalidarCacheCeldas(ctx.diaActivo);
+    } catch (err) {
+        console.error('Error guardando celda en Supabase:', err);
+    }
+}
+
+async function guardarEdit(){
+    if(!currentEditCard)return;
+    const card=currentEditCard;
+    const ctx=getCellContext(card);
+    card.classList.remove('tipo-mantenimiento','tipo-libre','tipo-vacio');
+
+    if(editType==='vaciar'){
+        // Al vaciar, eliminar todas las observaciones de Supabase
+        const idsEliminar = cellObservaciones.filter(o=>o.id).map(o=>o.id);
+        if (idsEliminar.length > 0) await supabaseClient.from('observaciones_celda').delete().in('id', idsEliminar);
+        card.innerHTML='';card.classList.add('tipo-vacio');
+        card.dataset.observaciones='';card.dataset.tipo='vaciar';
+        syncCellObservacionesToPanel(card,ctx,[]);
+        await persistirCeldaEnSupabase(card,ctx,'vaciar',{});
+        document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;return;
+    }
+    const textos = cellObservaciones.map(o=>o.texto);
+    if(editType==='libre'){
+        card.classList.add('tipo-libre');card.classList.toggle('tiene-obs',textos.length>0);
+        card.dataset.tipo='libre';card.dataset.observaciones=JSON.stringify(textos);
+        card.innerHTML=`<span class="estado-label">Practica Libre</span>${textos.length?'<span class="obs-indicator" title="Tiene observaciones"></span>':''}`;
+        syncCellObservacionesToPanel(card,ctx,textos);
+        await persistirCeldaEnSupabase(card,ctx,'libre',{});
+        document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;return;
+    }
+    if(editType==='mantenimiento'){
+        card.classList.add('tipo-mantenimiento');card.classList.toggle('tiene-obs',textos.length>0);
+        card.dataset.tipo='mantenimiento';card.dataset.observaciones=JSON.stringify(textos);
+        card.innerHTML=`<span class="estado-label">Mantenimiento</span>${textos.length?'<span class="obs-indicator" title="Tiene observaciones"></span>':''}`;
+        syncCellObservacionesToPanel(card,ctx,textos);
+        await persistirCeldaEnSupabase(card,ctx,'mantenimiento',{});
+        document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;return;
+    }
+    // clase
+    const nombre=document.getElementById('edit-nombre-clase').value.trim()||'Sin nombre';
+    const profesor=document.getElementById('edit-profesor').value.trim().toUpperCase()||'SIN PROFESOR';
+    const codigo=document.getElementById('edit-codigo').value.trim()||'—';
+    const grupo=document.getElementById('edit-grupo').value.trim()||'';
+    const ausente=document.getElementById('edit-ausente-toggle').checked;
+    card.dataset.codigo=codigo;card.dataset.grupo=grupo;card.dataset.tipo='clase';
+    card.dataset.observaciones=JSON.stringify(textos);
+    card.classList.toggle('tiene-obs',textos.length>0);
+    card.innerHTML=`<span class="prof-name${ausente?' ausente':''}">${profesor}</span><span class="class-subject">${nombre}</span><span class="room-code">${grupo?'G'+grupo:''}</span>${textos.length?'<span class="obs-indicator" title="Tiene observaciones"></span>':''}`;
+    syncCellObservacionesToPanel(card,ctx,textos);
+    await persistirCeldaEnSupabase(card,ctx,'clase',{nombre_clase:nombre,profesor,codigo,grupo,ausente});
+    document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;
+}
+
+function syncCellObservacionesToPanel(card,ctx,observaciones){
+    if(!card.dataset.cellId)card.dataset.cellId='cell-'+Math.random().toString(36).slice(2,10);
+    const cellId=card.dataset.cellId;
+    const container=document.getElementById('obs-per-cell-list');
+    const emptyMsg=document.getElementById('obs-per-cell-empty');
+    const existing=container.querySelector(`[data-cell-ref="${cellId}"]`);
+    if(existing)existing.remove();
+    if(observaciones.length>0){
+        const block=document.createElement('div');block.className='obs-cell-block';block.setAttribute('data-cell-ref',cellId);
+        block.innerHTML=`<div class="obs-cell-title">${ctx.diaActivo}: ${ctx.hora} · ${ctx.roomName}</div><div class="obs-cell-notes">${observaciones.map(o=>`<div class="obs-cell-note">${o}</div>`).join('')}</div>`;
+        container.appendChild(block);
+    }
+    emptyMsg.style.display=container.children.length===0?'block':'none';
+}
+
+async function borrarEdicion(){
+    if(!currentEditCard)return;
+    const card=currentEditCard;const ctx=getCellContext(card);
+    // Eliminar observaciones de Supabase antes de vaciar
+    const idsEliminar = cellObservaciones.filter(o=>o.id).map(o=>o.id);
+    if (idsEliminar.length > 0) await supabaseClient.from('observaciones_celda').delete().in('id', idsEliminar);
+    card.classList.remove('tipo-mantenimiento','tipo-libre','tiene-obs');
+    card.classList.add('tipo-vacio');card.innerHTML='';
+    card.dataset.observaciones='';card.dataset.codigo='';card.dataset.grupo='';card.dataset.tipo='vaciar';
+    syncCellObservacionesToPanel(card,ctx,[]);
+    await persistirCeldaEnSupabase(card,ctx,'vaciar',{});
+    document.getElementById('edit-backdrop').classList.remove('open');currentEditCard=null;
+}
+
+/* ══ DATOS DESDE SUPABASE ══ */
+const TIMES=['6-8','8-10','10-12','12-14','14-16','16-18','18-20','20-22'];
+let ROOMS=[];
+let salonesCache=null,franjasCache=null;
+async function obtenerCatalogos(){
+    if(salonesCache&&franjasCache)return{salonesData:salonesCache,franjasData:franjasCache};
+    const[{data:salonesData,error:errS},{data:franjasData,error:errF}]=await Promise.all([
+        supabaseClient.from('salones').select('id,nombre,orden').order('orden'),
+        supabaseClient.from('franjas').select('id,etiqueta,orden').order('orden')
+    ]);
+    if(errS||errF){console.error('Error catálogos:',errS||errF);return{salonesData:[],franjasData:[]};}
+    salonesCache=salonesData;franjasCache=franjasData;
+    return{salonesData,franjasData};
+}
+let celdasCachePorDia={};
+function invalidarCacheCeldas(dia){if(dia)delete celdasCachePorDia[dia];else celdasCachePorDia={};}
+async function cargarHorarioDesdeSupabase(){
+    const diaActivo=document.getElementById('day-text')?document.getElementById('day-text').textContent.trim():'Lunes';
+    const necesitaCeldas=!celdasCachePorDia[diaActivo];
+    const[{salonesData,franjasData},celdasResult]=await Promise.all([
+        obtenerCatalogos(),
+        necesitaCeldas
+            // Incluir conteo de observaciones por celda para mostrar el indicador azul al cargar
+            ?supabaseClient.from('celdas').select('*, observaciones_celda(id)').eq('dia',diaActivo)
+            :Promise.resolve({data:celdasCachePorDia[diaActivo],error:null})
+    ]);
+    if(celdasResult.error){console.error('Error celdas:',celdasResult.error);return;}
+    const celdasData=celdasResult.data;
+    celdasCachePorDia[diaActivo]=celdasData;
+    const franjaIdAIndex={};
+    (franjasData||[]).forEach((f,i)=>{franjaIdAIndex[f.id]=i;});
+    ROOMS=(salonesData||[]).map(salon=>{
+        const slots=new Array(TIMES.length).fill(null);
+        (celdasData||[]).filter(c=>c.salon_id===salon.id).forEach(c=>{
+            const idx=franjaIdAIndex[c.franja_id];if(idx===undefined)return;
+            const tieneObs = (c.observaciones_celda||[]).length > 0;
+            if(c.tipo==='clase')slots[idx]={prof:c.profesor||'',subject:c.nombre_clase||'',code:c.codigo||'',grupo:c.grupo||'',ausente:!!c.ausente,celdaId:c.id,tieneObs};
+            else if(c.tipo==='mantenimiento'||c.tipo==='libre')slots[idx]={tipo:c.tipo,celdaId:c.id,tieneObs};
+        });
+        return{id:salon.id,name:salon.nombre,slots};
+    });
+}
+function renderScheduleGridDesktop(){
+    const grid=document.getElementById('schedule-grid');if(!grid)return;
+    const headerCells=Array.from(grid.children).slice(0,9);
+    grid.innerHTML='';headerCells.forEach(c=>grid.appendChild(c));
+    ROOMS.forEach(room=>{
+        const roomCell=document.createElement('div');roomCell.className='grid-cell room-cell';roomCell.textContent=room.name;grid.appendChild(roomCell);
+        room.slots.forEach(slot=>{
+            const wrapper=document.createElement('div');wrapper.className='grid-cell card-wrapper';
+            const card=document.createElement('div');card.className='class-card';
+            if(slot&&slot.tipo==='mantenimiento'){
+                card.classList.add('tipo-mantenimiento');
+                if(slot.tieneObs)card.classList.add('tiene-obs');
+                card.innerHTML=`<span class="estado-label">Mantenimiento</span>${slot.tieneObs?'<span class="obs-indicator"></span>':''}`;
+            }else if(slot&&slot.tipo==='libre'){
+                card.classList.add('tipo-libre');
+                if(slot.tieneObs)card.classList.add('tiene-obs');
+                card.innerHTML=`<span class="estado-label">Practica Libre</span>${slot.tieneObs?'<span class="obs-indicator"></span>':''}`;
+            }else if(slot&&slot.subject){
+                if(slot.tieneObs)card.classList.add('tiene-obs');
+                card.innerHTML=`<span class="prof-name${slot.ausente?' ausente':''}">${slot.prof}</span><span class="class-subject">${slot.subject}</span><span class="room-code">${slot.grupo?'G'+slot.grupo:''}</span>${slot.tieneObs?'<span class="obs-indicator"></span>':''}`;
+                if(slot.celdaId)card.dataset.celdaId=slot.celdaId;
+                if(slot.code)card.dataset.codigo=slot.code;
+                if(slot.grupo)card.dataset.grupo=slot.grupo;
+                card.dataset.tipo='clase';
+            }else{card.classList.add('tipo-vacio');}
+            wrapper.appendChild(card);grid.appendChild(wrapper);
+        });
+    });
+    if(typeof initDragAndDropCards==='function')initDragAndDropCards();
+}
+async function recargarHorarioCompleto(){
+    await cargarHorarioDesdeSupabase();
+    renderScheduleGridDesktop();
+    await aplicarIntercambiosActivos();
+    if(typeof actualizarVistaMovilModo==='function')actualizarVistaMovilModo();
+    const toggle=document.getElementById('header-toggle');
+    if(toggle&&toggle.checked&&typeof renderRestanteList==='function')renderRestanteList();
+}
+
+/* Carga intercambios activos (no expirados) desde Supabase y los aplica visualmente
+   en la grilla desktop. Los expirados se eliminan automáticamente de la tabla. */
+async function aplicarIntercambiosActivos() {
+    try {
+        const { data, error } = await supabaseClient
+            .from('intercambios')
+            .select('id, celda_origen_id, celda_destino_id, tipo_duracion, fecha_expiracion');
+        if (error) throw error;
+
+        const ahora = new Date();
+        const expirados = (data||[]).filter(i => i.tipo_duracion === 'fecha' && i.fecha_expiracion && new Date(i.fecha_expiracion) <= ahora);
+        const activos = (data||[]).filter(i => !(i.tipo_duracion === 'fecha' && i.fecha_expiracion && new Date(i.fecha_expiracion) <= ahora));
+
+        // Eliminar expirados de la base de datos
+        if (expirados.length > 0) {
+            await supabaseClient.from('intercambios').delete().in('id', expirados.map(i=>i.id));
+        }
+
+        // Aplicar intercambios activos en la grilla desktop
+        activos.forEach(intercambio => {
+            const cardOrigen = document.querySelector(`.class-card[data-celda-id="${intercambio.celda_origen_id}"]`);
+            const cardDestino = document.querySelector(`.class-card[data-celda-id="${intercambio.celda_destino_id}"]`);
+            if (cardOrigen && cardDestino) {
+                const tmp = cardOrigen.innerHTML;
+                cardOrigen.innerHTML = cardDestino.innerHTML;
+                cardDestino.innerHTML = tmp;
+            }
+        });
+    } catch(err) {
+        console.error('Error cargando intercambios:', err);
+    }
+}
+let currentRoom=0;
+function renderMobileRoom(idx){
+    const room=ROOMS[idx];
+    document.getElementById('mob-room-title').textContent=room.name;
+    document.getElementById('mob-counter').textContent=`${idx+1} / ${ROOMS.length}`;
+    document.getElementById('mob-prev').disabled=idx===0;
+    document.getElementById('mob-next').disabled=idx===ROOMS.length-1;
+    const toggle=document.getElementById('header-toggle');
+    const modoRestante=toggle&&toggle.checked;
+    const rango=modoRestante?getRangoVisibleHorario():{primeraVisible:-999,actual:-999};
+    document.getElementById('mob-slots').innerHTML=room.slots.map((s,i)=>{
+        if(modoRestante&&i<rango.primeraVisible)return'';
+        const esActual=modoRestante&&i===rango.actual,esAnt=modoRestante&&i<rango.actual;
+        let contenido;
+        if(s&&s.tipo==='mantenimiento')contenido=`<span class="estado-label" style="color:#e0a83d;font-weight:700;">Mantenimiento</span>`;
+        else if(s&&s.tipo==='libre')contenido=`<span class="estado-label" style="color:rgba(255,255,255,0.55);font-style:italic;">Practica Libre</span>`;
+        else if(s&&s.subject)contenido=`<span class="prof-name${s.ausente?' ausente':''}">${s.prof}</span><span class="class-subject">${s.subject}</span><span class="room-code">${s.grupo?'G'+s.grupo:''}</span>`;
+        else contenido=`<span style="font-size:12px;font-style:italic;color:rgba(255,255,255,0.25);margin:auto;">Sin clase</span>`;
+        return`<div class="mobile-slot${esActual?' col-actual-mobile':''}${esAnt?' col-atenuada-mobile':''}"><div class="mobile-slot-time">${TIMES[i]}${esActual?' <span class="mobile-now-tag">Ahora</span>':''}</div><div class="mobile-slot-card">${contenido}</div></div>`;
+    }).join('');
+    document.getElementById('mob-dots').innerHTML=ROOMS.map((_,i)=>
+        `<div class="mobile-dot${i===idx?' active':''}" onclick="goToRoom(${i})"></div>`).join('');
+}
+function actualizarVistaMovilModo(){if(typeof currentRoom!=='undefined'&&document.getElementById('mob-slots'))renderMobileRoom(currentRoom);}
+function mobileNav(dir){const next=currentRoom+dir;if(next<0||next>=ROOMS.length)return;currentRoom=next;renderMobileRoom(currentRoom);}
+function goToRoom(idx){currentRoom=idx;renderMobileRoom(currentRoom);}
+let tx=0;
+const slotsEl=document.getElementById('mob-slots');
+slotsEl.addEventListener('touchstart',e=>{tx=e.changedTouches[0].screenX;},{passive:true});
+slotsEl.addEventListener('touchend',e=>{const diff=tx-e.changedTouches[0].screenX;if(Math.abs(diff)>50)mobileNav(diff>0?1:-1);},{passive:true});
+recargarHorarioCompleto();
+
+/* ══ IMPORTAR / EXPORTAR EXCEL ══ */
+const DIAS_VALIDOS=['Lunes','Martes','Miercoles','Miércoles','Jueves','Viernes','Sabado','Sábado'];
+const NORMALIZAR_DIA={'Miércoles':'Miercoles','Sábado':'Sabado'};
+const HORAS_VALIDAS=TIMES;
+async function obtenerSalonesValidos(){
+    const{data,error}=await supabaseClient.from('salones').select('nombre');
+    if(error){console.error('Error salones:',error);return[];}
+    return(data||[]).map(s=>s.nombre);
+}
+document.getElementById('btn-export-excel').addEventListener('click',async()=>{
+    const btn=document.getElementById('btn-export-excel');const orig=btn.innerHTML;btn.innerHTML='Generando...';btn.disabled=true;
+    try{
+        const{data,error}=await supabaseClient.from('celdas').select('dia,tipo,nombre_clase,profesor,codigo,grupo,salones(nombre),franjas(etiqueta)').eq('tipo','clase').order('dia');
+        if(error)throw error;
+        const filas=(data||[]).map(c=>({'Día':c.dia,'Hora':c.franjas?c.franjas.etiqueta:'','Asignatura':c.nombre_clase||'','Código':c.codigo||'','Grupo':c.grupo||'','Salón':c.salones?c.salones.nombre:'','Docente':c.profesor||''}));
+        const ws=XLSX.utils.json_to_sheet(filas);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Horario');
+        XLSX.writeFile(wb,`Horario_Exportado_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }catch(err){console.error('Error exportando:',err);alert('Hubo un error al exportar.');}
+    finally{btn.innerHTML=orig;btn.disabled=false;document.getElementById('account-dropdown').classList.remove('open');}
+});
+document.getElementById('btn-import-excel').addEventListener('click',()=>document.getElementById('excel-file-input').click());
+let datosImportacionPendiente=null;
+document.getElementById('excel-file-input').addEventListener('change',async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    document.getElementById('account-dropdown').classList.remove('open');
+    try{
+        const buffer=await file.arrayBuffer();
+        const wb=XLSX.read(buffer,{type:'array'});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const filas=XLSX.utils.sheet_to_json(ws,{defval:''});
+        const salonesValidos=await obtenerSalonesValidos();
+        const validas=[],errores=[];
+        filas.forEach((fila,i)=>{
+            const nFila=i+2;
+            let dia=String(fila['Día']||'').trim();
+            const hora=String(fila['Hora']||'').trim(),asignatura=String(fila['Asignatura']||'').trim(),salon=String(fila['Salón']||'').trim(),docente=String(fila['Docente']||'').trim(),codigo=String(fila['Código']||'').trim(),grupo=String(fila['Grupo']||'').trim();
+            dia=NORMALIZAR_DIA[dia]||dia;
+            if(!DIAS_VALIDOS.includes(dia)&&!['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'].includes(dia)){errores.push(`Fila ${nFila}: día "${fila['Día']}" no válido.`);return;}
+            if(!HORAS_VALIDAS.includes(hora)){errores.push(`Fila ${nFila}: hora "${hora}" no válida.`);return;}
+            if(!salonesValidos.includes(salon)){errores.push(`Fila ${nFila}: salón "${salon}" no existe.`);return;}
+            if(!asignatura){errores.push(`Fila ${nFila}: falta asignatura.`);return;}
+            validas.push({dia,hora,asignatura,codigo,grupo,salon,docente});
+        });
+        datosImportacionPendiente=validas;
+        mostrarResumenImportacion(validas.length,errores);
+    }catch(err){console.error('Error leyendo Excel:',err);alert('No se pudo leer el archivo.');}
+    finally{e.target.value='';}
+});
+function mostrarResumenImportacion(okCount,errores){
+    document.getElementById('import-summary').innerHTML=`<span class="ok-count">${okCount}</span> filas válidas listas para importar.<br>${errores.length>0?`<span class="err-count">${errores.length}</span> filas con errores (se omitirán).`:'Sin errores detectados.'}`;
+    const errorsBox=document.getElementById('import-errors');
+    if(errores.length>0){errorsBox.innerHTML=errores.slice(0,30).map(e=>`<div>${e}</div>`).join('');if(errores.length>30)errorsBox.innerHTML+=`<div>... y ${errores.length-30} más.</div>`;errorsBox.classList.add('show');}
+    else{errorsBox.classList.remove('show');errorsBox.innerHTML='';}
+    document.getElementById('btn-confirm-import').disabled=okCount===0;
+    document.getElementById('import-backdrop').classList.add('open');
+}
+document.getElementById('btn-cancel-import').addEventListener('click',()=>{document.getElementById('import-backdrop').classList.remove('open');datosImportacionPendiente=null;});
+document.getElementById('btn-confirm-import').addEventListener('click',async()=>{
+    if(!datosImportacionPendiente||!isCurrentUserAdmin)return;
+    const btn=document.getElementById('btn-confirm-import');const orig=btn.textContent;btn.disabled=true;btn.textContent='Importando...';
+    try{
+        const{data:salonesData}=await supabaseClient.from('salones').select('id,nombre');
+        const{data:franjasData}=await supabaseClient.from('franjas').select('id,etiqueta');
+        const salonMap=Object.fromEntries((salonesData||[]).map(s=>[s.nombre,s.id]));
+        const franjaMap=Object.fromEntries((franjasData||[]).map(f=>[f.etiqueta,f.id]));
+        const{error:delError}=await supabaseClient.from('celdas').delete().eq('tipo','clase');
+        if(delError)throw delError;
+        const filas=datosImportacionPendiente.map(f=>({dia:f.dia,salon_id:salonMap[f.salon],franja_id:franjaMap[f.hora],tipo:'clase',nombre_clase:f.asignatura,profesor:f.docente,codigo:f.codigo,grupo:f.grupo})).filter(f=>f.salon_id&&f.franja_id);
+        for(let i=0;i<filas.length;i+=100){const{error:insError}=await supabaseClient.from('celdas').insert(filas.slice(i,i+100));if(insError)throw insError;}
+        alert(`Horario importado correctamente: ${filas.length} clases cargadas.`);
+        document.getElementById('import-backdrop').classList.remove('open');datosImportacionPendiente=null;
+        invalidarCacheCeldas();await recargarHorarioCompleto();
+    }catch(err){console.error('Error importando:',err);alert('Hubo un error al guardar el horario.');btn.disabled=false;btn.textContent=orig;}
+});
+
+/* ══════════════════════════════════
+   BÚSQUEDA EN TIEMPO REAL
+   Busca por: profesor, nombre de clase, nombre de salón
+   — Resalta coincidencias en la grilla del día actual
+   — Muestra resultados de otros días en un panel inferior
+══════════════════════════════════ */
+const DIAS_ORDEN = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+
+function normalizar(str) {
+    return (str||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+
+function resaltarTexto(texto, query) {
+    if (!query) return texto;
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    return texto.replace(regex, '<span class="search-highlight">$1</span>');
+}
+
+let searchTimeout = null;
+
+async function ejecutarBusqueda(query) {
+    const panel = document.getElementById('search-results-panel');
+    const otrosDiasContainer = document.getElementById('search-otros-dias');
+
+    if (!query || query.trim().length < 2) {
+        limpiarBusqueda(); return;
+    }
+
+    const q = query.trim();
+    document.body.classList.add('buscando');
+
+    // ── 1. Resaltar coincidencias en la grilla del día actual y ocultar filas sin match ──
+    const allCells = Array.from(document.querySelectorAll('#schedule-grid > div'));
+    const cols = 9;
+    const totalFilas = Math.floor(allCells.length / cols);
+
+    for (let fila = 1; fila < totalFilas; fila++) { // fila 0 = encabezado, lo saltamos
+        const start = fila * cols;
+        const roomCell = allCells[start];
+        const roomName = roomCell?.textContent.trim() || '';
+        let filaConMatch = false;
+
+        for (let col = 1; col < cols; col++) {
+            const wrapper = allCells[start + col];
+            const card = wrapper?.querySelector('.class-card');
+            if (!card) continue;
+
+            const prof = card.querySelector('.prof-name')?.textContent.trim() || '';
+            const subject = card.querySelector('.class-subject')?.textContent.trim() || '';
+            const esMant = card.classList.contains('tipo-mantenimiento');
+            const esLibre = card.classList.contains('tipo-libre');
+            const tipoTexto = esMant ? 'mantenimiento' : (esLibre ? 'practica libre practica' : '');
+            const matches = normalizar(prof).includes(normalizar(q)) ||
+                           normalizar(subject).includes(normalizar(q)) ||
+                           normalizar(roomName).includes(normalizar(q)) ||
+                           normalizar(tipoTexto).includes(normalizar(q));
+            card.classList.toggle('search-match', matches);
+            if (matches) filaConMatch = true;
+        }
+
+        // Ocultar la fila entera (room-cell + 8 card-wrappers) si no tiene ningún match
+        for (let col = 0; col < cols; col++) {
+            const cell = allCells[start + col];
+            if (cell) cell.classList.toggle('grid-row-sin-match', !filaConMatch);
+        }
+    }
+
+    // ── 2. Buscar en todos los demás días desde Supabase ──
+    const diaActual = document.getElementById('day-text')?.textContent.trim() || 'Lunes';
+
+    try {
+        const { salonesData, franjasData } = await obtenerCatalogos();
+        const salonMap = Object.fromEntries((salonesData||[]).map(s=>[s.id, s.nombre]));
+        const franjaMap = Object.fromEntries((franjasData||[]).map(f=>[f.id, {etiqueta:f.etiqueta,orden:f.orden}]));
+
+        // Detectar si la búsqueda es por tipo (mantenimiento / practica libre)
+        const qNorm = normalizar(q);
+        const esBusquedaMant = 'mantenimiento'.includes(qNorm);
+        const esBusquedaLibre = ['practica','libre','práctica'].some(t=>t.includes(qNorm));
+
+        // Buscar por nombre de clase, profesor (clases) o tipo (mant/libre)
+        let todoResultados = [];
+
+        // Clases por nombre o profesor
+        const { data: porTexto, error } = await supabaseClient
+            .from('celdas')
+            .select('id,dia,tipo,nombre_clase,profesor,grupo,codigo,salon_id,franja_id')
+            .eq('tipo','clase')
+            .or(`nombre_clase.ilike.%${q}%,profesor.ilike.%${q}%`);
+        if (error) throw error;
+        todoResultados = [...(porTexto||[])];
+
+        // Mantenimientos si la búsqueda coincide con "mantenimiento"
+        if (esBusquedaMant) {
+            const { data: mants } = await supabaseClient
+                .from('celdas').select('id,dia,tipo,nombre_clase,profesor,grupo,codigo,salon_id,franja_id')
+                .eq('tipo','mantenimiento');
+            const idsYa = new Set(todoResultados.map(r=>r.id));
+            (mants||[]).forEach(r=>{ if(!idsYa.has(r.id)) todoResultados.push(r); });
+        }
+
+        // Práctica libre si la búsqueda coincide
+        if (esBusquedaLibre) {
+            const { data: libres } = await supabaseClient
+                .from('celdas').select('id,dia,tipo,nombre_clase,profesor,grupo,codigo,salon_id,franja_id')
+                .eq('tipo','libre');
+            const idsYa = new Set(todoResultados.map(r=>r.id));
+            (libres||[]).forEach(r=>{ if(!idsYa.has(r.id)) todoResultados.push(r); });
+        }
+
+        // Buscar también por salón (cualquier tipo)
+        const salonesCoincidentes = (salonesData||[])
+            .filter(s => normalizar(s.nombre).includes(normalizar(q))).map(s=>s.id);
+        if (salonesCoincidentes.length > 0) {
+            const { data: porSalon } = await supabaseClient
+                .from('celdas').select('id,dia,tipo,nombre_clase,profesor,grupo,codigo,salon_id,franja_id')
+                .in('salon_id',salonesCoincidentes)
+                .in('tipo',['clase','mantenimiento','libre']);
+            const idsYa = new Set(todoResultados.map(r=>r.id));
+            (porSalon||[]).forEach(r=>{ if(!idsYa.has(r.id)) todoResultados.push(r); });
+        }
+
+        // Enriquecer y ordenar
+        todoResultados = todoResultados.map(r=>({
+            ...r,
+            salonNombre: salonMap[r.salon_id]||'—',
+            franjaInfo: franjaMap[r.franja_id]||{etiqueta:'—',orden:99}
+        })).sort((a,b)=>{
+            const dA=DIAS_ORDEN.indexOf(a.dia), dB=DIAS_ORDEN.indexOf(b.dia);
+            return dA!==dB ? dA-dB : a.franjaInfo.orden-b.franjaInfo.orden;
+        });
+
+        // Solo otros días en el panel
+        const otrosDias = todoResultados.filter(r=>r.dia!==diaActual);
+        const porDia = {};
+        otrosDias.forEach(r=>{ if(!porDia[r.dia])porDia[r.dia]=[]; porDia[r.dia].push(r); });
+
+        const hayMatchHoy = document.querySelectorAll('.class-card.search-match').length > 0;
+
+        if (Object.keys(porDia).length===0 && !hayMatchHoy) {
+            otrosDiasContainer.innerHTML=`<div class="search-sin-resultados">No se encontraron resultados para "<strong>${q}</strong>"</div>`;
+        } else {
+            let html = '';
+            if (Object.keys(porDia).length > 0) {
+                html+=`<div class="search-otros-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>RESULTADOS EN OTROS DÍAS</div>`;
+                DIAS_ORDEN.filter(d=>porDia[d]).forEach(dia=>{
+                    const items=porDia[dia];
+                    html+=`<div class="search-dia-grupo"><div class="search-dia-header"><span class="search-dia-nombre">${dia}</span><span class="search-dia-count">${items.length} resultado${items.length!==1?'s':''} &nbsp;·&nbsp; <button class="search-dia-ver" onclick="seleccionarDia('${dia}')">Ver día →</button></span></div>`;
+                    items.forEach(r=>{
+                        const[h1,h2]=(r.franjaInfo.etiqueta||'').split('-');
+                        html+=`<div class="search-resultado-fila">
+                            <span class="search-res-hora"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${h1?h1+':00 - '+h2+':00':'—'}</span>
+                            <span class="search-res-salon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>${resaltarTexto(r.salonNombre,q)}</span>
+                            <div class="search-res-info"><span class="search-res-nombre">${resaltarTexto(r.nombre_clase||'',q)}</span><span class="search-res-prof">${resaltarTexto(r.profesor||'',q)}</span></div>
+                            <span class="search-res-grupo">${r.grupo?'G'+r.grupo:''}</span>
+                        </div>`;
+                    });
+                    html+=`</div>`;
+                });
+            }
+            otrosDiasContainer.innerHTML=html;
+        }
+        panel.classList.add('visible');
+    } catch(err) {
+        console.error('Error en búsqueda:', err);
+    }
+}
+
+function limpiarBusqueda() {
+    document.body.classList.remove('buscando');
+    document.querySelectorAll('.class-card').forEach(c=>c.classList.remove('search-match'));
+    document.querySelectorAll('.grid-row-sin-match').forEach(c=>c.classList.remove('grid-row-sin-match'));
+    document.getElementById('search-results-panel').classList.remove('visible');
+    document.getElementById('search-otros-dias').innerHTML='';
+}
+
+document.getElementById('search-input').addEventListener('input',(e)=>{
+    clearTimeout(searchTimeout);
+    const q=e.target.value.trim();
+    if(q.length===0){limpiarBusqueda();return;}
+    searchTimeout=setTimeout(()=>ejecutarBusqueda(q),300);
+});
+
+// Limpiar al cambiar de día (wrapper para que también limpie el campo)
+const _origSeleccionarDia=seleccionarDia;
+seleccionarDia=function(dia){
+    document.getElementById('search-input').value='';
+    limpiarBusqueda();
+    _origSeleccionarDia(dia);
+};
+
+// Limpiar con Escape
+document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape'&&document.getElementById('search-input').value){
+        document.getElementById('search-input').value='';
+        limpiarBusqueda();
+    }
+});
+
+/* ══════════════════════════════════
+   PANEL DE GESTIÓN DE ADMINISTRADORES
+   ══════════════════════════════════ */
+let usuariosAppCache = [];
+let adminsEmailSet = new Set();
+
+async function abrirPanelAdmins() {
+    document.getElementById('account-dropdown').classList.remove('open');
+    document.getElementById('admins-panel-backdrop').classList.add('open');
+    document.getElementById('ap-buscar').value = '';
+    await cargarUsuariosYAdmins();
+}
+
+function cerrarPanelAdmins() {
+    document.getElementById('admins-panel-backdrop').classList.remove('open');
+}
+
+async function cargarUsuariosYAdmins() {
+    const lista = document.getElementById('ap-lista');
+    lista.innerHTML = '<div class="ap-loading">Cargando usuarios...</div>';
+
+    try {
+        const [{ data: usuarios, error: errU }, { data: admins, error: errA }] = await Promise.all([
+            supabaseClient.from('usuarios_app').select('*').order('ultimo_login', { ascending: false }),
+            supabaseClient.from('admins').select('email')
+        ]);
+        if (errU) throw errU;
+        if (errA) throw errA;
+
+        usuariosAppCache = usuarios || [];
+        adminsEmailSet = new Set((admins || []).map(a => a.email));
+        renderListaAdmins();
+    } catch (err) {
+        console.error('Error cargando usuarios:', err);
+        lista.innerHTML = '<div class="ap-empty">Hubo un error cargando la lista de usuarios.</div>';
+    }
+}
+
+function renderListaAdmins(filtro) {
+    const lista = document.getElementById('ap-lista');
+    let usuarios = usuariosAppCache;
+    if (filtro) {
+        const f = filtro.toLowerCase();
+        usuarios = usuarios.filter(u =>
+            (u.nombre||'').toLowerCase().includes(f) || u.email.toLowerCase().includes(f));
+    }
+
+    if (usuarios.length === 0) {
+        lista.innerHTML = `<div class="ap-empty">${filtro ? 'No se encontraron usuarios.' : 'Aún no hay usuarios registrados. Aparecerán aquí cuando alguien inicie sesión.'}</div>`;
+        return;
+    }
+
+    lista.innerHTML = usuarios.map(u => {
+        const esAdmin = adminsEmailSet.has(u.email);
+        const esYoMismo = currentUser && u.email === currentUser.email;
+        return `
+        <div class="ap-usuario">
+            <img class="ap-usuario-foto" src="${u.foto_url || 'img/Wizard.webp'}" alt="">
+            <div class="ap-usuario-info">
+                <div class="ap-usuario-nombre">${u.nombre || u.email}${esYoMismo ? ' (Tú)' : ''}</div>
+                <div class="ap-usuario-email">${u.email}</div>
+            </div>
+            <button class="ap-toggle-btn ${esAdmin ? 'es-admin' : 'no-admin'}"
+                onclick="toggleAdmin('${u.email}', ${esAdmin}, this)"
+                ${esYoMismo ? 'disabled title="No puedes quitarte tu propio acceso de admin"' : ''}>
+                ${esAdmin ? 'Admin ✓' : 'Hacer admin'}
+            </button>
+        </div>`;
+    }).join('');
+}
+
+document.getElementById('ap-buscar').addEventListener('input', (e) => renderListaAdmins(e.target.value.trim()));
+
+async function toggleAdmin(email, esAdminActualmente, btn) {
+    btn.disabled = true;
+    const textoOriginal = btn.textContent;
+    btn.textContent = '...';
+
+    try {
+        if (esAdminActualmente) {
+            const { error } = await supabaseClient.from('admins').delete().eq('email', email);
+            if (error) throw error;
+            adminsEmailSet.delete(email);
+        } else {
+            const usuario = usuariosAppCache.find(u => u.email === email);
+            const { error } = await supabaseClient.from('admins').insert({
+                email, nombre: usuario?.nombre || email
+            });
+            if (error) throw error;
+            adminsEmailSet.add(email);
+        }
+        renderListaAdmins(document.getElementById('ap-buscar').value.trim());
+    } catch (err) {
+        console.error('Error actualizando admin:', err);
+        alert('Hubo un error al actualizar el rol de este usuario.');
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+    }
+}
+
+document.getElementById('admins-panel-backdrop').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) cerrarPanelAdmins();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Problemas</title>
+    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/en/thumb/4/40/Aphex_Twin_logo.svg/960px-Aphex_Twin_logo.svg.png?_=20250713090340">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        .prob-page { padding: 2px 300px; }
+
+        .prob-header { display: flex; align-items: center; margin-bottom: 24px; }
+        .back-btn {
+            width: 36px; height: 36px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.06);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: #fff; transition: background 0.2s;
+            flex-shrink: 0; text-decoration: none;
+        }
+        .back-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
+        .prob-title-row { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
+        .prob-title { font-size: 32px; font-weight: 700; color: #fff; font-family: 'Inter', sans-serif; }
+        .spacer { width: 36px; flex-shrink: 0; }
+
+        .prob-card {
+            border-radius: 14px; padding: 16px 20px; position: relative;
+            border: 1px solid rgba(255,255,255,0.13); margin-bottom: 12px; overflow: hidden;
+        }
+        .prob-card::before {
+            content: ''; position: absolute; inset: 0; border-radius: inherit;
+            background: rgba(255,255,255,0.073);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 0;
+            box-shadow: inset 2px 2px 0px -2px rgba(255,255,255,0.7), inset 0 0 3px 1px rgba(255,255,255,0.1);
+        }
+        .prob-card > * { position: relative; z-index: 1; }
+
+        /* ══ BÚSQUEDA ══ */
+        .prob-search {
+            display: flex; align-items: center; gap: 10px;
+            padding: 11px 16px; margin-bottom: 20px; position: relative; overflow: hidden;
+            border-radius: 14px; border: 1px solid rgba(255,255,255,0.13);
+        }
+        .prob-search::before {
+            content: ''; position: absolute; inset: 0; border-radius: inherit;
+            background: rgba(255,255,255,0.06); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 0;
+        }
+        .prob-search > * { position: relative; z-index: 1; }
+        .prob-search input {
+            flex: 1; background: none; border: none; outline: none; color: #fff;
+            font-family: 'Inter', sans-serif; font-size: 14.5px;
+        }
+        .prob-search input::placeholder { color: rgba(255,255,255,0.35); }
+        .prob-search svg { color: rgba(255,255,255,0.4); flex-shrink: 0; }
+
+        /* ══ LISTA DE POSTS ══ */
+        .post-card { cursor: pointer; transition: background 0.15s; }
+        .post-card:hover::before { background: rgba(255,255,255,0.1); }
+        .post-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+        .post-card-titulo { font-family: 'Inter', sans-serif; font-size: 17px; font-weight: 700; color: #fff; line-height: 1.3; }
+        .post-card-meta { font-family: 'Inter', sans-serif; font-size: 12.5px; color: rgba(255,255,255,0.4); margin-bottom: 8px; }
+        .post-card-snippet {
+            font-family: 'Inter', sans-serif; font-size: 13.5px; color: rgba(255,255,255,0.6);
+            line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .post-card-thumbs { display: flex; gap: 6px; margin-top: 10px; }
+        .post-card-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1px solid rgba(255,255,255,0.1); }
+        .post-card-badge {
+            font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4);
+            background: rgba(255,255,255,0.07); padding: 3px 9px; border-radius: 20px; flex-shrink: 0; white-space: nowrap;
+        }
+
+        .prob-empty {
+            font-family: 'Inter', sans-serif; font-size: 14px; color: rgba(255,255,255,0.3);
+            font-style: italic; text-align: center; padding: 48px 0;
+        }
+        .prob-loading {
+            font-family: 'Inter', sans-serif; font-size: 14px; color: rgba(255,255,255,0.35);
+            font-style: italic; text-align: center; padding: 48px 0;
+        }
+
+        .btn-nuevo-post {
+            width: 100%; padding: 13px; border-radius: 12px;
+            background: rgba(144,174,234,0.12); border: 1px solid rgba(144,174,234,0.3);
+            color: #90AEEA; font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600;
+            cursor: pointer; transition: background 0.2s; margin-bottom: 20px;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-nuevo-post:hover { background: rgba(144,174,234,0.2); }
+
+        /* ══ VISTA DETALLE ══ */
+        #vista-detalle { display: none; }
+        .detalle-header { margin-bottom: 18px; }
+        .detalle-titulo { font-family: 'Inter', sans-serif; font-size: 26px; font-weight: 700; color: #fff; line-height: 1.25; margin-bottom: 8px; }
+        .detalle-meta { font-family: 'Inter', sans-serif; font-size: 13px; color: rgba(255,255,255,0.4); display: flex; align-items: center; gap: 10px; }
+        .detalle-acciones { display: flex; gap: 8px; margin-top: 14px; }
+        .det-btn {
+            padding: 7px 14px; border-radius: 9px; font-family: 'Inter', sans-serif; font-size: 13px;
+            font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.15); transition: background 0.2s;
+            background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.75);
+        }
+        .det-btn:hover { background: rgba(255,255,255,0.12); }
+        .det-btn-eliminar { color: #e05252; border-color: rgba(220,80,80,0.3); background: rgba(220,80,80,0.08); }
+        .det-btn-eliminar:hover { background: rgba(220,80,80,0.16); }
+
+        .bloque-texto {
+            font-family: 'Inter', sans-serif; font-size: 15px; color: rgba(255,255,255,0.85);
+            line-height: 1.65; white-space: pre-wrap; margin-bottom: 16px;
+        }
+        .bloque-imagen { margin-bottom: 16px; }
+        .bloque-imagen img {
+            max-width: 100%; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); display: block;
+        }
+        .bloque-imagen-caption {
+            font-family: 'Inter', sans-serif; font-size: 12px; color: rgba(255,255,255,0.35);
+            margin-top: 6px; text-align: center;
+        }
+        .bloque-archivo {
+            display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+            border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 16px; text-decoration: none; transition: background 0.15s;
+        }
+        .bloque-archivo:hover { background: rgba(255,255,255,0.09); }
+        .bloque-archivo-icon {
+            width: 38px; height: 38px; border-radius: 9px; background: rgba(144,174,234,0.15);
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #90AEEA;
+        }
+        .bloque-archivo-info { flex: 1; min-width: 0; }
+        .bloque-archivo-nombre {
+            font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600; color: #fff;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .bloque-archivo-tamano { font-family: 'Inter', sans-serif; font-size: 12px; color: rgba(255,255,255,0.4); }
+
+        /* ══ EDITOR ══ */
+        #vista-editor { display: none; }
+        .editor-titulo-input {
+            width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.13);
+            border-radius: 12px; padding: 14px 16px; color: #fff; font-family: 'Inter', sans-serif;
+            font-size: 19px; font-weight: 700; outline: none; box-sizing: border-box; margin-bottom: 16px;
+        }
+        .editor-titulo-input::placeholder { color: rgba(255,255,255,0.3); font-weight: 500; }
+        .editor-titulo-input:focus { border-color: rgba(255,255,255,0.3); }
+
+        .bloque-edit-wrap {
+            position: relative; margin-bottom: 12px; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1); padding: 12px;
+        }
+        .bloque-edit-remove {
+            position: absolute; top: 8px; right: 8px; width: 24px; height: 24px;
+            border-radius: 7px; background: rgba(220,80,80,0.15); border: 1px solid rgba(220,80,80,0.3);
+            color: #e05252; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s; z-index: 2;
+        }
+        .bloque-edit-remove:hover { background: rgba(220,80,80,0.28); }
+
+        .bloque-edit-textarea {
+            width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 9px; padding: 11px 13px; color: #fff; font-family: 'Inter', sans-serif;
+            font-size: 14.5px; line-height: 1.5; outline: none; box-sizing: border-box; resize: vertical; min-height: 70px;
+        }
+        .bloque-edit-textarea::placeholder { color: rgba(255,255,255,0.3); }
+        .bloque-edit-textarea:focus { border-color: rgba(255,255,255,0.25); }
+
+        .bloque-edit-imagen img { max-width: 100%; border-radius: 9px; display: block; }
+        .bloque-edit-archivo {
+            display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+            background: rgba(255,255,255,0.04); border-radius: 9px;
+        }
+
+        .editor-toolbar {
+            display: flex; gap: 8px; margin: 8px 0 20px; flex-wrap: wrap;
+        }
+        .toolbar-btn {
+            display: flex; align-items: center; gap: 6px; padding: 9px 14px;
+            border-radius: 10px; border: 1px solid rgba(255,255,255,0.13);
+            background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.8);
+            font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: background 0.2s;
+        }
+        .toolbar-btn:hover { background: rgba(255,255,255,0.1); }
+        .toolbar-btn:disabled { opacity: 0.5; cursor: wait; }
+
+        .editor-acciones { display: flex; gap: 10px; margin-top: 4px; margin-bottom: 40px; }
+        .ed-btn {
+            flex: 1; padding: 13px; border-radius: 12px; font-family: 'Inter', sans-serif;
+            font-size: 14.5px; font-weight: 600; cursor: pointer; border: none; transition: background 0.2s;
+        }
+        .ed-btn-cancel { background: rgba(255,255,255,0.1); color: #fff; }
+        .ed-btn-cancel:hover { background: rgba(255,255,255,0.16); }
+        .ed-btn-save { background: #1a3a5c; color: #fff; border: 1px solid rgba(100,160,230,0.3); }
+        .ed-btn-save:hover { background: #1e4570; }
+        .ed-btn-save:disabled { opacity: 0.5; cursor: wait; }
+
+        .editor-vacio-hint {
+            font-family: 'Inter', sans-serif; font-size: 13.5px; color: rgba(255,255,255,0.3);
+            font-style: italic; text-align: center; padding: 20px 0;
+        }
+
+        @media (max-width: 1200px) { .prob-page { padding: 2px 80px; } }
+        @media (max-width: 900px) { .prob-page { padding: 2px 24px; } }
+        @media (max-width: 640px) {
+            .prob-page { padding: 2px 14px; }
+            .prob-title { font-size: 24px; }
+            .detalle-titulo { font-size: 21px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="prob-page">
+    <div class="prob-header">
+        <a href="index.html" class="back-btn" title="Volver" id="btn-back">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </a>
+        <div class="prob-title-row">
+            <img src="img/Problems.webp" alt="" style="width:28px;height:28px;object-fit:contain;">
+            <span class="prob-title">Problemas</span>
+        </div>
+        <div class="spacer"></div>
+    </div>
+
+    <!-- ══ VISTA LISTA ══ -->
+    <div id="vista-lista">
+        <div class="prob-search">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="buscar-input" placeholder="Buscar guías y soluciones...">
+        </div>
+
+        <button class="btn-nuevo-post" id="btn-nuevo-post" style="display:none;" onclick="abrirEditor()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nueva Guía / Solución
+        </button>
+
+        <div id="lista-posts"><div class="prob-loading">Cargando...</div></div>
+    </div>
+
+    <!-- ══ VISTA DETALLE ══ -->
+    <div id="vista-detalle">
+        <button class="det-btn" onclick="volverALista()" style="margin-bottom:18px;">← Volver a la lista</button>
+        <div class="detalle-header">
+            <div class="detalle-titulo" id="det-titulo">—</div>
+            <div class="detalle-meta">
+                <span id="det-autor">—</span> · <span id="det-fecha">—</span>
+            </div>
+            <div class="detalle-acciones" id="det-acciones"></div>
+        </div>
+        <div id="det-contenido"></div>
+    </div>
+
+    <!-- ══ VISTA EDITOR ══ -->
+    <div id="vista-editor">
+        <button class="det-btn" onclick="cancelarEditor()" style="margin-bottom:18px;">← Cancelar</button>
+        <input type="text" class="editor-titulo-input" id="editor-titulo" placeholder="Título de la guía o solución (ej: Cómo formatear el switch Cisco SG350)">
+
+        <div id="editor-bloques"></div>
+        <div class="editor-vacio-hint" id="editor-vacio-hint">Añade texto, imágenes o archivos con los botones de abajo.</div>
+
+        <div class="editor-toolbar">
+            <button class="toolbar-btn" onclick="agregarBloqueTexto()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+                Texto
+            </button>
+            <button class="toolbar-btn" id="btn-add-imagen" onclick="document.getElementById('input-imagen').click()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                Imagen
+            </button>
+            <button class="toolbar-btn" id="btn-add-archivo" onclick="document.getElementById('input-archivo').click()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                Archivo
+            </button>
+            <input type="file" id="input-imagen" accept="image/*" style="display:none;">
+            <input type="file" id="input-archivo" style="display:none;">
+        </div>
+
+        <div class="editor-acciones">
+            <button class="ed-btn ed-btn-cancel" onclick="cancelarEditor()">Cancelar</button>
+            <button class="ed-btn ed-btn-save" id="btn-guardar-post" onclick="guardarPost()">Publicar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ══ SUPABASE ══ */
+const SUPABASE_URL = 'https://nwjcuosceidgnfyfeuqe.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_H95FvNeaJdxrWTAJElW-FA_K_thenik';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentUser = null;
+let isAdmin = false;
+let posts = [];
+let bloquesEditor = [];   // bloques del post que se está creando
+let postEditandoId = null; // si no es null, estamos editando un post existente
+
+/* ══ AUTH ══ */
+async function initAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    currentUser = session?.user || null;
+    if (currentUser) {
+        const { data } = await sb.from('admins').select('email').eq('email', currentUser.email).maybeSingle();
+        isAdmin = !!data;
+    }
+    document.getElementById('btn-nuevo-post').style.display = isAdmin ? 'flex' : 'none';
+    cargarPosts();
+}
+sb.auth.onAuthStateChange((_e, session) => { currentUser = session?.user || null; initAuth(); });
+
+/* ══ UTILIDADES ══ */
+function formatFecha(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString('es-CO', { day:'numeric', month:'long', year:'numeric', timeZone:'America/Bogota' });
+}
+function formatTamano(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+function snippetDe(bloques) {
+    const t = (bloques||[]).find(b => b.type === 'texto');
+    return t ? t.contenido.slice(0, 140) : '';
+}
+function imagenesDe(bloques) {
+    return (bloques||[]).filter(b => b.type === 'imagen').slice(0, 4);
+}
+
+/* ══ CARGAR Y RENDERIZAR LISTA ══ */
+async function cargarPosts() {
+    const { data, error } = await sb.from('problemas_posts').select('*').order('created_at', { ascending: false });
+    if (error) { console.error(error); posts = []; }
+    else posts = data || [];
+    renderLista();
+}
+
+function renderLista(filtro) {
+    const cont = document.getElementById('lista-posts');
+    let lista = posts;
+    if (filtro) {
+        const f = filtro.toLowerCase();
+        lista = posts.filter(p => p.titulo.toLowerCase().includes(f) || snippetDe(p.bloques).toLowerCase().includes(f));
+    }
+    if (lista.length === 0) {
+        cont.innerHTML = `<div class="prob-empty">${filtro ? 'No se encontraron guías que coincidan con tu búsqueda.' : 'Aún no hay guías publicadas. ¡Sé el primero en compartir una solución!'}</div>`;
+        return;
+    }
+    cont.innerHTML = lista.map(p => {
+        const thumbs = imagenesDe(p.bloques);
+        const snippet = snippetDe(p.bloques);
+        const numArchivos = (p.bloques||[]).filter(b=>b.type==='archivo').length;
+        return `
+        <div class="prob-card post-card" onclick="verPost('${p.id}')">
+            <div class="post-card-top">
+                <div class="post-card-titulo">${p.titulo}</div>
+                ${numArchivos > 0 ? `<span class="post-card-badge">📎 ${numArchivos}</span>` : ''}
+            </div>
+            <div class="post-card-meta">${p.autor_nombre || p.autor_email} · ${formatFecha(p.created_at)}</div>
+            ${snippet ? `<div class="post-card-snippet">${snippet}</div>` : ''}
+            ${thumbs.length > 0 ? `<div class="post-card-thumbs">${thumbs.map(t=>`<img class="post-card-thumb" src="${t.url}" alt="">`).join('')}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+document.getElementById('buscar-input').addEventListener('input', (e) => renderLista(e.target.value.trim()));
+
+/* ══ VISTA DETALLE ══ */
+function volverALista() {
+    document.getElementById('vista-detalle').style.display = 'none';
+    document.getElementById('vista-lista').style.display = 'block';
+}
+
+function verPost(id) {
+    const post = posts.find(p => p.id === id);
+    if (!post) return;
+    document.getElementById('vista-lista').style.display = 'none';
+    document.getElementById('vista-detalle').style.display = 'block';
+
+    document.getElementById('det-titulo').textContent = post.titulo;
+    document.getElementById('det-autor').textContent = post.autor_nombre || post.autor_email;
+    document.getElementById('det-fecha').textContent = formatFecha(post.created_at);
+
+    document.getElementById('det-acciones').innerHTML = isAdmin ? `
+        <button class="det-btn" onclick="editarPost('${post.id}')">✎ Editar</button>
+        <button class="det-btn det-btn-eliminar" onclick="eliminarPost('${post.id}')">✕ Eliminar</button>
+    ` : '';
+
+    document.getElementById('det-contenido').innerHTML = (post.bloques||[]).map(renderBloqueDetalle).join('');
+}
+
+function renderBloqueDetalle(b) {
+    if (b.type === 'texto') {
+        return `<div class="bloque-texto">${escapeHtml(b.contenido)}</div>`;
+    }
+    if (b.type === 'imagen') {
+        return `<div class="bloque-imagen"><img src="${b.url}" alt="${b.nombre||''}">${b.nombre ? `<div class="bloque-imagen-caption">${b.nombre}</div>` : ''}</div>`;
+    }
+    if (b.type === 'archivo') {
+        return `<a class="bloque-archivo" href="${b.url}" target="_blank" download="${b.nombre}">
+            <div class="bloque-archivo-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <div class="bloque-archivo-info">
+                <div class="bloque-archivo-nombre">${b.nombre}</div>
+                <div class="bloque-archivo-tamano">${formatTamano(b.tamano)}</div>
+            </div>
+        </a>`;
+    }
+    return '';
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+async function eliminarPost(id) {
+    if (!confirm('¿Eliminar esta guía? Esta acción no se puede deshacer.')) return;
+    const { error } = await sb.from('problemas_posts').delete().eq('id', id);
+    if (error) { console.error(error); alert('Error eliminando la guía.'); return; }
+    posts = posts.filter(p => p.id !== id);
+    volverALista();
+    renderLista();
+}
+
+/* ══ EDITOR ══ */
+function abrirEditor() {
+    postEditandoId = null;
+    bloquesEditor = [];
+    document.getElementById('editor-titulo').value = '';
+    document.getElementById('btn-guardar-post').textContent = 'Publicar';
+    renderBloquesEditor();
+    document.getElementById('vista-lista').style.display = 'none';
+    document.getElementById('vista-editor').style.display = 'block';
+}
+
+function editarPost(id) {
+    const post = posts.find(p => p.id === id);
+    if (!post) return;
+    postEditandoId = id;
+    bloquesEditor = JSON.parse(JSON.stringify(post.bloques || []));
+    document.getElementById('editor-titulo').value = post.titulo;
+    document.getElementById('btn-guardar-post').textContent = 'Guardar cambios';
+    renderBloquesEditor();
+    document.getElementById('vista-detalle').style.display = 'none';
+    document.getElementById('vista-editor').style.display = 'block';
+}
+
+function cancelarEditor() {
+    document.getElementById('vista-editor').style.display = 'none';
+    document.getElementById('vista-lista').style.display = 'block';
+}
+
+function renderBloquesEditor() {
+    const cont = document.getElementById('editor-bloques');
+    document.getElementById('editor-vacio-hint').style.display = bloquesEditor.length === 0 ? 'block' : 'none';
+
+    cont.innerHTML = bloquesEditor.map((b, i) => {
+        if (b.type === 'texto') {
+            return `<div class="bloque-edit-wrap">
+                <button class="bloque-edit-remove" onclick="quitarBloque(${i})" title="Eliminar">✕</button>
+                <textarea class="bloque-edit-textarea" placeholder="Escribe los pasos, la explicación o la solución..." oninput="actualizarTextoBloque(${i}, this.value)">${escapeHtml(b.contenido)}</textarea>
+            </div>`;
+        }
+        if (b.type === 'imagen') {
+            return `<div class="bloque-edit-wrap bloque-edit-imagen">
+                <button class="bloque-edit-remove" onclick="quitarBloque(${i})" title="Eliminar">✕</button>
+                <img src="${b.url}" alt="">
+            </div>`;
+        }
+        if (b.type === 'archivo') {
+            return `<div class="bloque-edit-wrap">
+                <button class="bloque-edit-remove" onclick="quitarBloque(${i})" title="Eliminar">✕</button>
+                <div class="bloque-edit-archivo">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#90AEEA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <div><div style="font-family:'Inter',sans-serif;font-size:13.5px;font-weight:600;color:#fff;">${b.nombre}</div>
+                    <div style="font-family:'Inter',sans-serif;font-size:11.5px;color:rgba(255,255,255,0.4);">${formatTamano(b.tamano)}</div></div>
+                </div>
+            </div>`;
+        }
+        return '';
+    }).join('');
+}
+
+function agregarBloqueTexto() {
+    bloquesEditor.push({ type:'texto', contenido:'' });
+    renderBloquesEditor();
+    // foco al nuevo textarea
+    const areas = document.querySelectorAll('.bloque-edit-textarea');
+    if (areas.length) areas[areas.length-1].focus();
+}
+function actualizarTextoBloque(i, valor) {
+    bloquesEditor[i].contenido = valor;
+}
+function quitarBloque(i) {
+    bloquesEditor.splice(i, 1);
+    renderBloquesEditor();
+}
+
+/* Subida de imagen */
+document.getElementById('input-imagen').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    await subirArchivoComoBloque(file, 'imagen');
+});
+/* Subida de archivo (cualquier tipo) */
+document.getElementById('input-archivo').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    await subirArchivoComoBloque(file, 'archivo');
+});
+
+async function subirArchivoComoBloque(file, tipoBloque) {
+    const btnImg = document.getElementById('btn-add-imagen');
+    const btnArc = document.getElementById('btn-add-archivo');
+    btnImg.disabled = true; btnArc.disabled = true;
+    const textoOriginal = tipoBloque === 'imagen' ? btnImg.innerHTML : btnArc.innerHTML;
+    (tipoBloque === 'imagen' ? btnImg : btnArc).innerHTML = 'Subiendo...';
+
+    try {
+        const ext = file.name.split('.').pop();
+        const path = `${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await sb.storage.from('problemas-archivos').upload(path, file);
+        if (upErr) throw upErr;
+        const { data: urlData } = sb.storage.from('problemas-archivos').getPublicUrl(path);
+
+        bloquesEditor.push({
+            type: tipoBloque,
+            url: urlData.publicUrl,
+            nombre: file.name,
+            tamano: file.size,
+            path
+        });
+        renderBloquesEditor();
+    } catch (err) {
+        console.error(err);
+        alert('Hubo un error subiendo el archivo. Intenta de nuevo.');
+    } finally {
+        btnImg.disabled = false; btnArc.disabled = false;
+        btnImg.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>Imagen';
+        btnArc.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>Archivo';
+    }
+}
+
+async function guardarPost() {
+    const titulo = document.getElementById('editor-titulo').value.trim();
+    if (!titulo) { alert('Ponle un título a la guía.'); return; }
+    if (bloquesEditor.length === 0) { alert('Añade al menos un bloque de texto, imagen o archivo.'); return; }
+
+    // Limpiar el campo "path" interno antes de guardar (solo lo usamos para poder borrar del storage si hace falta)
+    const bloquesParaGuardar = bloquesEditor.map(({path, ...resto}) => resto);
+
+    const btn = document.getElementById('btn-guardar-post');
+    btn.disabled = true;
+    const textoOriginal = btn.textContent;
+    btn.textContent = 'Guardando...';
+
+    try {
+        if (postEditandoId) {
+            const { error } = await sb.from('problemas_posts')
+                .update({ titulo, bloques: bloquesParaGuardar, updated_at: new Date().toISOString() })
+                .eq('id', postEditandoId);
+            if (error) throw error;
+        } else {
+            const { error } = await sb.from('problemas_posts').insert({
+                titulo,
+                bloques: bloquesParaGuardar,
+                autor_email: currentUser?.email || '',
+                autor_nombre: currentUser?.user_metadata?.full_name || currentUser?.email || 'Admin'
+            });
+            if (error) throw error;
+        }
+        await cargarPosts();
+        cancelarEditor();
+    } catch (err) {
+        console.error(err);
+        alert('Hubo un error guardando la guía. Intenta de nuevo.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+    }
+}
+
+initAuth();
+</script>
+</body>
+</html>
