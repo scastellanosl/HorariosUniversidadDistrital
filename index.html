@@ -891,7 +891,7 @@ async function refreshAuthUI() {
     const profileImg = document.getElementById('profile-img');
     const loggedOutBox = document.getElementById('account-logged-out');
     const loggedInBox = document.getElementById('account-logged-in');
-        if (currentUser) {
+    if (currentUser) {
         isCurrentUserAdmin = await checkIsAdmin(currentUser.email);
         const photo = currentUser.user_metadata?.avatar_url || 'img/Wizard.webp';
         const name = currentUser.user_metadata?.full_name || currentUser.email;
