@@ -1790,17 +1790,27 @@ document.getElementById('btn-confirm-import').addEventListener('click',async()=>
         }
 
         // Las celdas que antes eran 'clase' pero ya NO aparecen en el Excel nuevo
-        // (por ejemplo, si se redujo el horario) deben vaciarse, no quedar huérfanas.
+        // (por ejemplo, si se redujo el horario, como en un semestre intersemestral)
+        // deben vaciarse, no quedar huérfanas con datos del horario anterior.
         const combosNuevos = new Set(filas.map(f=>`${f.dia}|${f.salon_id}|${f.franja_id}`));
-        const{data:clasesActuales}=await supabaseClient.from('celdas').select('id,dia,salon_id,franja_id').eq('tipo','clase');
+        const{data:clasesActuales,error:selError}=await supabaseClient.from('celdas').select('id,dia,salon_id,franja_id').eq('tipo','clase');
+        if(selError)throw selError;
+
         const idsAVaciar=(clasesActuales||[])
             .filter(c=>!combosNuevos.has(`${c.dia}|${c.salon_id}|${c.franja_id}`))
             .map(c=>c.id);
-        if(idsAVaciar.length>0){
-            await supabaseClient.from('celdas').delete().in('id',idsAVaciar);
+
+        // Eliminar en lotes de 50 (una lista .in() muy larga puede fallar
+        // silenciosamente por límite de longitud de URL en la petición).
+        let vaciadas = 0;
+        for(let i=0;i<idsAVaciar.length;i+=50){
+            const lote = idsAVaciar.slice(i,i+50);
+            const{error:delError}=await supabaseClient.from('celdas').delete().in('id',lote);
+            if(delError){ console.error('Error vaciando celdas obsoletas:',delError); throw delError; }
+            vaciadas += lote.length;
         }
 
-        alert(`Horario importado correctamente: ${filas.length} clases cargadas.`);
+        alert(`Horario importado correctamente: ${filas.length} clases cargadas${vaciadas>0?`, ${vaciadas} celdas vacías (intersemestral)`:''}.`);
         document.getElementById('import-backdrop').classList.remove('open');datosImportacionPendiente=null;
         invalidarCacheCeldas();await recargarHorarioCompleto();
     }catch(err){console.error('Error importando:',err);alert('Hubo un error al guardar el horario.');btn.disabled=false;btn.textContent=orig;}
