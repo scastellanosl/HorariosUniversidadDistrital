@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestor de Horarios</title>
-    <link rel="icon" type="image/png" href="https://i.pinimg.com/736x/c5/67/57/c56757ecd67c88d0b9fcd50efb46c6d5.jpg">
+    <link rel="icon" type="image/png" href="https://upload.wikimedia.org/wikipedia/en/thumb/4/40/Aphex_Twin_logo.svg/960px-Aphex_Twin_logo.svg.png?_=20250713090340">
     <link rel="stylesheet" href="style.css">
     <style>
         /* ══════════════════════════════════
@@ -1776,10 +1776,30 @@ document.getElementById('btn-confirm-import').addEventListener('click',async()=>
         const{data:franjasData}=await supabaseClient.from('franjas').select('id,etiqueta');
         const salonMap=Object.fromEntries((salonesData||[]).map(s=>[s.nombre,s.id]));
         const franjaMap=Object.fromEntries((franjasData||[]).map(f=>[f.etiqueta,f.id]));
-        const{error:delError}=await supabaseClient.from('celdas').delete().eq('tipo','clase');
-        if(delError)throw delError;
-        const filas=datosImportacionPendiente.map(f=>({dia:f.dia,salon_id:salonMap[f.salon],franja_id:franjaMap[f.hora],tipo:'clase',nombre_clase:f.asignatura,profesor:f.docente,codigo:f.codigo,grupo:f.grupo})).filter(f=>f.salon_id&&f.franja_id);
-        for(let i=0;i<filas.length;i+=100){const{error:insError}=await supabaseClient.from('celdas').insert(filas.slice(i,i+100));if(insError)throw insError;}
+
+        const filas=datosImportacionPendiente.map(f=>({dia:f.dia,salon_id:salonMap[f.salon],franja_id:franjaMap[f.hora],tipo:'clase',nombre_clase:f.asignatura,profesor:f.docente,codigo:f.codigo,grupo:f.grupo,ausente:false})).filter(f=>f.salon_id&&f.franja_id);
+
+        // Upsert en vez de insert: si ya existe una fila en esa combinación
+        // día+salón+franja (por ejemplo, una celda marcada como Mantenimiento
+        // o Práctica Libre en una importación/edición anterior), la sobrescribe
+        // en vez de chocar con un error 409 de restricción única.
+        for(let i=0;i<filas.length;i+=100){
+            const{error:upsError}=await supabaseClient.from('celdas')
+                .upsert(filas.slice(i,i+100), {onConflict:'dia,salon_id,franja_id'});
+            if(upsError)throw upsError;
+        }
+
+        // Las celdas que antes eran 'clase' pero ya NO aparecen en el Excel nuevo
+        // (por ejemplo, si se redujo el horario) deben vaciarse, no quedar huérfanas.
+        const combosNuevos = new Set(filas.map(f=>`${f.dia}|${f.salon_id}|${f.franja_id}`));
+        const{data:clasesActuales}=await supabaseClient.from('celdas').select('id,dia,salon_id,franja_id').eq('tipo','clase');
+        const idsAVaciar=(clasesActuales||[])
+            .filter(c=>!combosNuevos.has(`${c.dia}|${c.salon_id}|${c.franja_id}`))
+            .map(c=>c.id);
+        if(idsAVaciar.length>0){
+            await supabaseClient.from('celdas').delete().in('id',idsAVaciar);
+        }
+
         alert(`Horario importado correctamente: ${filas.length} clases cargadas.`);
         document.getElementById('import-backdrop').classList.remove('open');datosImportacionPendiente=null;
         invalidarCacheCeldas();await recargarHorarioCompleto();
