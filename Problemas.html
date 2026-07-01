@@ -576,13 +576,12 @@ async function guardarPost() {
         cancelarEditor();
     } catch (err) {
         console.error(err);
-        alert('Hubo un error guardando la guía. Intenta de nuevo.');
+        alert('Hubo un error guardando la guía. Intenta de nuevo por favor.');
     } finally {
         btn.disabled = false;
         btn.textContent = textoOriginal;
     }
 }
-
 initAuth();
 </script>
 </body>
