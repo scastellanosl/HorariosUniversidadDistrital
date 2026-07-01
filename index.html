@@ -1805,6 +1805,14 @@ document.getElementById('btn-confirm-import').addEventListener('click',async()=>
         let vaciadas = 0;
         for(let i=0;i<idsAVaciar.length;i+=50){
             const lote = idsAVaciar.slice(i,i+50);
+
+            // Limpieza defensiva: eliminar primero cualquier intercambio que
+            // referencie estas celdas, para que el borrado no falle por
+            // restricción de llave foránea (además de la regla en cascada
+            // ya configurada en la base de datos).
+            await supabaseClient.from('intercambios').delete().in('celda_origen_id', lote);
+            await supabaseClient.from('intercambios').delete().in('celda_destino_id', lote);
+
             const{error:delError}=await supabaseClient.from('celdas').delete().in('id',lote);
             if(delError){ console.error('Error vaciando celdas obsoletas:',delError); throw delError; }
             vaciadas += lote.length;
