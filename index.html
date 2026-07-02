@@ -207,6 +207,21 @@
            prof-name más grande, class-subject más pequeña
         ══════════════════════════════════ */
         .class-card { cursor:grab; overflow:hidden; box-sizing:border-box; }
+
+        /* ══════════════════════════════════
+           REORDENAR FILAS DE SALÓN (arrastrando el nombre)
+        ══════════════════════════════════ */
+        body:not(.modo-solo-lectura) .room-cell {
+            cursor: grab;
+        }
+        .room-cell.dragging-row {
+            opacity: 0.35;
+        }
+        .room-cell.drag-over-row {
+            outline: 2px solid rgba(144,174,234,0.8);
+            outline-offset: -2px;
+            background: rgba(144,174,234,0.1) !important;
+        }
         .class-card:active { cursor:grabbing; }
         .class-card.dragging { opacity:0.4; transform:scale(0.97); }
         .card-wrapper.drag-over .class-card { outline:2px solid rgba(144,174,234,0.8); background:rgba(144,174,234,0.08); }
@@ -1193,6 +1208,71 @@ function getRoomNameForWrapper(wrapper){
     if(idx===-1)return 'Sala';
     return all[Math.floor(idx/cols)*cols]?.textContent.trim()||'Sala';
 }
+
+/* ══ REORDENAR FILAS DE SALÓN (arrastrando el nombre de la sala) ══ */
+let roomRowDragSrc = null;
+
+function initRoomRowDragAndDrop() {
+    document.querySelectorAll('.room-cell').forEach(cell => {
+        cell.setAttribute('draggable', isCurrentUserAdmin ? 'true' : 'false');
+
+        cell.addEventListener('dragstart', function(e) {
+            if (!isCurrentUserAdmin) { e.preventDefault(); return; }
+            roomRowDragSrc = this;
+            this.classList.add('dragging-row');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/room-row', this.dataset.salonId || '');
+        });
+        cell.addEventListener('dragend', function() {
+            this.classList.remove('dragging-row');
+            document.querySelectorAll('.room-cell').forEach(c => c.classList.remove('drag-over-row'));
+        });
+        cell.addEventListener('dragover', function(e) {
+            if (!roomRowDragSrc || roomRowDragSrc === this) return;
+            e.preventDefault();
+            document.querySelectorAll('.room-cell').forEach(c => c.classList.remove('drag-over-row'));
+            this.classList.add('drag-over-row');
+        });
+        cell.addEventListener('dragleave', function() {
+            this.classList.remove('drag-over-row');
+        });
+        cell.addEventListener('drop', async function(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over-row');
+            if (!roomRowDragSrc || roomRowDragSrc === this) { roomRowDragSrc = null; return; }
+
+            const idOrigen = roomRowDragSrc.dataset.salonId;
+            const idDestino = this.dataset.salonId;
+            roomRowDragSrc = null;
+            if (!idOrigen || !idDestino) return;
+
+            await moverFilaSalon(idOrigen, idDestino);
+        });
+    });
+}
+
+/* Reordena ROOMS moviendo la sala idOrigen a la posición de idDestino,
+   re-renderiza la grilla al instante, y persiste el nuevo orden en Supabase. */
+async function moverFilaSalon(idOrigen, idDestino) {
+    const idxOrigen = ROOMS.findIndex(r => String(r.id) === String(idOrigen));
+    const idxDestino = ROOMS.findIndex(r => String(r.id) === String(idDestino));
+    if (idxOrigen === -1 || idxDestino === -1) return;
+
+    const [salaMovida] = ROOMS.splice(idxOrigen, 1);
+    ROOMS.splice(idxDestino, 0, salaMovida);
+
+    renderScheduleGridDesktop();
+
+    try {
+        const actualizaciones = ROOMS.map((room, i) =>
+            supabaseClient.from('salones').update({ orden: i + 1 }).eq('id', room.id)
+        );
+        await Promise.all(actualizaciones);
+        salonesCache = null;
+    } catch (err) {
+        console.error('Error guardando el nuevo orden de salones:', err);
+    }
+}
 function selectSwapOption(opt){
     document.getElementById('opt-permanente').classList.toggle('selected',opt==='permanente');
     document.getElementById('opt-fecha').classList.toggle('selected',opt==='fecha');
@@ -1613,7 +1693,10 @@ function renderScheduleGridDesktop(){
     const headerCells=Array.from(grid.children).slice(0,9);
     grid.innerHTML='';headerCells.forEach(c=>grid.appendChild(c));
     ROOMS.forEach(room=>{
-        const roomCell=document.createElement('div');roomCell.className='grid-cell room-cell';roomCell.textContent=room.name;grid.appendChild(roomCell);
+        const roomCell=document.createElement('div');roomCell.className='grid-cell room-cell';roomCell.textContent=room.name;
+        roomCell.dataset.salonId=room.id;
+        roomCell.setAttribute('draggable', isCurrentUserAdmin ? 'true' : 'false');
+        grid.appendChild(roomCell);
         room.slots.forEach(slot=>{
             const wrapper=document.createElement('div');wrapper.className='grid-cell card-wrapper';
             const card=document.createElement('div');card.className='class-card';
@@ -1637,6 +1720,7 @@ function renderScheduleGridDesktop(){
         });
     });
     if(typeof initDragAndDropCards==='function')initDragAndDropCards();
+    if(typeof initRoomRowDragAndDrop==='function')initRoomRowDragAndDrop();
 }
 async function recargarHorarioCompleto(){
     await cargarHorarioDesdeSupabase();
